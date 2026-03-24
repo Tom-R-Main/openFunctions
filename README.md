@@ -1,13 +1,13 @@
-# OpenFunction
+# openFunctions
 
 **Build AI agent tools in minutes.** Define once, use with any AI.
 
-OpenFunction is a lightweight TypeScript framework for building [MCP](https://modelcontextprotocol.io) (Model Context Protocol) servers — the open standard for giving AI agents tools to call. Your tools work with Claude, Gemini, ChatGPT, and any MCP-compatible client, with zero rewriting.
+openFunctions is a lightweight TypeScript framework for building [MCP](https://modelcontextprotocol.io) (Model Context Protocol) servers — the open standard for giving AI agents tools to call. Your tools work with Claude, Gemini, ChatGPT, and any MCP-compatible client, with zero rewriting.
 
 ```
 ┌─────────────────────────────────────────────────────────┐
 │                  Your Tool Definitions                   │
-│              (define once with OpenFunction)              │
+│              (define once with openFunctions)              │
 └──────────┬──────────────┬──────────────┬────────────────┘
            │              │              │
      ┌─────▼─────┐ ┌─────▼─────┐ ┌─────▼──────┐
@@ -127,7 +127,7 @@ openFunctions/
 
 ## How It Works
 
-OpenFunction is built on three concepts:
+openFunctions is built on three concepts:
 
 **1. Tools** — Functions an AI can call. Each tool has a name, description (the AI reads this to decide when to use it), parameter schema, and a handler function.
 
@@ -167,9 +167,9 @@ npm run inspect
 
 ## Architecture
 
-This framework is derived from [ExecuFunction](https://execufunction.com)'s production tool system, which powers ~150 AI-callable tools across task management, calendar, knowledge, code search, and more. OpenFunction extracts the core pattern and strips away the production complexity (auth, RLS, activity events, billing) so you can focus on building tools.
+This framework is derived from [ExecuFunction](https://execufunction.com)'s production tool system, which powers ~150 AI-callable tools across task management, calendar, knowledge, code search, and more. openFunctions extracts the core pattern and strips away the production complexity (auth, RLS, activity events, billing) so you can focus on building tools.
 
-The key insight: **the AI model is interchangeable, but the tool layer is what makes agents actually useful.** OpenFunction proves this by making the same tool definitions work across Claude, Gemini, and any MCP client.
+The key insight: **the AI model is interchangeable, but the tool layer is what makes agents actually useful.** openFunctions proves this by making the same tool definitions work across Claude, Gemini, and any MCP client.
 
 ## License
 
