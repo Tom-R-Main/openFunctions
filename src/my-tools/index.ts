@@ -16,7 +16,8 @@
  * ╚══════════════════════════════════════════════════════════════════╝
  */
 
-import { defineTool, ok } from "../framework/index.js";
+// Note: imports use .js extensions — this is required by Node.js ESM, even though the files are .ts
+import { defineTool, ok, err } from "../framework/index.js";
 
 // ─── Example starter tool (replace this with your own!) ────────────────────
 
@@ -60,9 +61,14 @@ export const myTools = [helloWorld];
 // Step 4: Define your tools using defineTool()
 //         Copy the pattern from any example in examples/
 //
+//         Why do params appear twice? The TypeScript interface gives YOU type
+//         safety. The inputSchema gives the AI a description of each parameter.
+//         They should match, but the schema has descriptions the AI reads.
+//
 // Step 5: Add your tools to the myTools array above
 //
-// Step 6: Test with:  npm run test-tools
+// Step 6: Test with:  npm run dev          (auto-restarts on save)
+//         Or:         npm run test-tools   (interactive CLI)
 //         Or MCP:     npm start
 //
 // Need help? Look at examples/study-tracker/tools.ts for the simplest example.

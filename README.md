@@ -28,74 +28,49 @@ That's it. You have a working MCP server with 10 example tools.
 
 ## Test Your Tools
 
-Three ways to verify everything works:
-
 ```bash
-# 1. Interactive CLI (no API key needed)
+# Interactive CLI — test any tool, no API key needed
 npm run test-tools
 
-# 2. MCP Inspector (visual web UI)
+# Dev mode — auto-restarts when you edit code
+npm run dev
+
+# MCP Inspector — visual web UI for your server
 npm run inspect
 
-# 3. Chat with Gemini using your tools
+# Chat with Gemini using your tools
 export GEMINI_API_KEY=your-key-here
 npm run gemini
 ```
 
 ## Build Your Own Tools
 
-Open `src/my-tools/index.ts` and start building. Here's the pattern:
+Open `src/my-tools/index.ts` and start building. Here's the simplest possible tool:
 
 ```typescript
-import { defineTool, ok, err } from "../framework/index.js";
+import { defineTool, ok } from "../framework/index.js";
 
-// 1. Define your data
-interface Expense {
-  id: string;
-  description: string;
-  amount: number;
-  paidBy: string;
-}
-
-const expenses: Expense[] = [];
-
-// 2. Define your param types (these match your inputSchema)
-interface AddExpenseParams {
-  description: string;
-  amount: number;
-  paidBy: string;
-}
-
-// 3. Define a tool
-export const addExpense = defineTool<AddExpenseParams>({
-  name: "add_expense",
-  description: "Add a shared expense to split with friends",
+export const rollDice = defineTool({
+  name: "roll_dice",
+  description: "Roll a dice with the given number of sides",
   inputSchema: {
     type: "object",
     properties: {
-      description: { type: "string", description: "What was purchased" },
-      amount:      { type: "number", description: "Cost in dollars" },
-      paidBy:      { type: "string", description: "Who paid" },
+      sides: { type: "number", description: "Number of sides (default 6)" },
     },
-    required: ["description", "amount", "paidBy"],
   },
-  handler: async ({ description, amount, paidBy }) => {
-    const expense = {
-      id: String(expenses.length + 1),
-      description,
-      amount,
-      paidBy,
-    };
-    expenses.push(expense);
-    return ok(expense, `Added: ${description} ($${amount}, paid by ${paidBy})`);
+  handler: async ({ sides }) => {
+    const result = Math.floor(Math.random() * ((sides as number) || 6)) + 1;
+    return ok({ rolled: result });
   },
 });
 
-// 4. Export your tools
-export const myTools = [addExpense];
+export const myTools = [rollDice];
 ```
 
-Then restart: `npm start`
+Run `npm run dev` to auto-restart on save, then `npm run test-tools` to try it.
+
+For a full example with typed params, in-memory storage, and error handling, see `src/examples/study-tracker/tools.ts`.
 
 ## Project Structure
 
