@@ -1,0 +1,8 @@
+node_modules/
+dist/
+*.js
+*.d.ts
+*.js.map
+!setup.sh
+.env
+.DS_Store

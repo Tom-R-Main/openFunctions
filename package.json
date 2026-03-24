@@ -1,0 +1,25 @@
+{
+  "name": "openfunction",
+  "version": "1.0.0",
+  "description": "Build AI agent tools in minutes. Workshop kit for creating MCP servers that work with any AI.",
+  "type": "module",
+  "main": "src/index.ts",
+  "bin": {
+    "openfunction": "./src/index.ts"
+  },
+  "scripts": {
+    "start": "tsx src/index.ts",
+    "dev": "tsx watch src/index.ts",
+    "test-tools": "tsx test-client/cli.ts",
+    "gemini": "tsx gemini-bridge/test-with-gemini.ts",
+    "inspect": "npx @modelcontextprotocol/inspector tsx src/index.ts"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.12.1"
+  },
+  "devDependencies": {
+    "tsx": "^4.19.0",
+    "@types/node": "^22.0.0",
+    "typescript": "^5.6.0"
+  }
+}
