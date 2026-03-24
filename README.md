@@ -24,7 +24,7 @@ cd openFunctions
 bash setup.sh
 ```
 
-That's it. You have a working MCP server with 10 example tools.
+That's it. You have a working MCP server with 26 example tools.
 
 ## Test Your Tools
 
@@ -82,10 +82,16 @@ openFunctions/
 │   │   ├── registry.ts      # Tool registry + provider format adapters
 │   │   ├── server.ts        # MCP server wrapper
 │   │   └── types.ts         # TypeScript interfaces
-│   ├── examples/            # Read these to learn the pattern
-│   │   ├── study-tracker/   # Task management (simplest example)
-│   │   ├── bookmark-manager/# Save & search links (arrays, search)
-│   │   └── quiz-generator/  # Quiz game (stateful, complex params)
+│   ├── examples/            # Read these to learn the patterns
+│   │   ├── study-tracker/   # CRUD pattern (beginner)
+│   │   ├── bookmark-manager/# Arrays + search (beginner)
+│   │   ├── recipe-keeper/   # Nested data + random (beginner)
+│   │   ├── expense-splitter/# Math + calculations (intermediate)
+│   │   ├── workout-logger/  # Date filtering + stats (intermediate)
+│   │   ├── dictionary/      # External API wrapper (intermediate)
+│   │   ├── quiz-generator/  # Stateful game (advanced)
+│   │   ├── ai-tools/        # Tool calls an LLM (advanced)
+│   │   └── utilities/       # Stateless helpers (beginner)
 │   ├── my-tools/            # YOUR tools go here
 │   │   └── index.ts         # Start building!
 │   └── index.ts             # Entry point — registers tools, starts server
@@ -110,19 +116,22 @@ openFunctions is built on three concepts:
 
 **3. MCP Server** — Exposes your tools over the [Model Context Protocol](https://modelcontextprotocol.io), the open standard for AI tool interoperability. Any MCP client can discover and call your tools.
 
-## Domain Menu
+## Example Domains (26 tools)
 
-Pick a domain and build 2-3 tools:
+Every domain has a complete reference implementation in `src/examples/`:
 
-| Domain | Tools | Difficulty |
-|--------|-------|-----------|
-| Study Tracker | `create_task`, `list_tasks`, `complete_task` | Beginner |
-| Bookmark Manager | `save_link`, `search_links`, `tag_link` | Beginner |
-| Expense Splitter | `add_expense`, `split_bill`, `get_balances` | Intermediate |
-| Workout Logger | `log_workout`, `get_stats`, `suggest_workout` | Intermediate |
-| Recipe Keeper | `save_recipe`, `search_recipes`, `get_random` | Beginner |
-| Quiz Generator | `create_quiz`, `answer_question`, `get_score` | Advanced |
-| Or invent your own! | Whatever you want | You decide |
+| Domain | Tools | Pattern |
+|--------|-------|---------|
+| Study Tracker | `create_task`, `list_tasks`, `complete_task` | CRUD + Store |
+| Bookmark Manager | `save_link`, `search_links`, `tag_link` | Arrays + Search |
+| Recipe Keeper | `save_recipe`, `search_recipes`, `get_random` | Nested Data + Random |
+| Expense Splitter | `add_expense`, `split_bill`, `get_balances` | Math + Calculations |
+| Workout Logger | `log_workout`, `get_stats`, `suggest_workout` | Date Filtering + Stats |
+| Dictionary | `define_word`, `find_synonyms` | External API (no key needed) |
+| Quiz Generator | `create_quiz`, `answer_question`, `get_score` | Stateful Game |
+| AI Tools | `summarize_text`, `generate_flashcards` | Tool Calls an LLM |
+| Utilities | `calculate`, `convert_units`, `format_date` | Stateless Helpers |
+| **Or invent your own!** | Whatever you want | You decide |
 
 ## Connecting to AI Clients
 
