@@ -27,7 +27,7 @@ import {
 // ─── Config ────────────────────────────────────────────────────────────────
 
 const API_KEY = process.env.GEMINI_API_KEY;
-const MODEL = "gemini-2.0-flash";
+const MODEL = process.env.GEMINI_MODEL ?? "gemini-3-flash-preview";
 const API_URL = `https://generativelanguage.googleapis.com/v1beta/models/${MODEL}:generateContent?key=${API_KEY}`;
 
 // ─── Types ─────────────────────────────────────────────────────────────────
