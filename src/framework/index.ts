@@ -28,6 +28,10 @@
 // Core tool definition
 export { defineTool, ok, err } from "./tool.js";
 
+// Persistent store
+export { createStore } from "./store.js";
+export type { Store } from "./store.js";
+
 // Tool registry
 export { ToolRegistry, registry } from "./registry.js";
 

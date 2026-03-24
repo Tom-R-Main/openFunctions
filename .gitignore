@@ -6,3 +6,4 @@ dist/
 !setup.sh
 .env
 .DS_Store
+.data/

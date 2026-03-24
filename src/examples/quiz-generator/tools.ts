@@ -10,7 +10,7 @@
  *   - Using the AI as a quiz master
  */
 
-import { defineTool, ok, err } from "../../framework/index.js";
+import { defineTool, ok, err, createStore } from "../../framework/index.js";
 
 // ─── Data ──────────────────────────────────────────────────────────────────
 
@@ -25,7 +25,8 @@ interface Quiz {
   id: string;
   topic: string;
   questions: Question[];
-  answers: Map<number, number>; // questionId → selected option index
+  answers: Record<number, number>; // questionId → selected option index
+  answeredCount: number;
   createdAt: string;
 }
 
@@ -34,8 +35,9 @@ interface CreateQuizParams { topic: string; questions: Array<{ question: string;
 interface AnswerQuestionParams { quiz_id: string; question_id: number; answer_index: number }
 interface GetScoreParams { quiz_id: string }
 
-const quizzes = new Map<string, Quiz>();
-let nextId = 1;
+/** Persistent store — data saved to .data/quizzes.json, survives restarts */
+const quizzes = createStore<Quiz>("quizzes");
+let nextId = quizzes.size + 1;
 
 // ─── Tools ─────────────────────────────────────────────────────────────────
 
@@ -86,9 +88,10 @@ export const createQuiz = defineTool<CreateQuizParams>({
 
     const quiz: Quiz = {
       id,
-      topic: topic as string,
+      topic,
       questions: parsedQuestions,
-      answers: new Map(),
+      answers: {},
+      answeredCount: 0,
       createdAt: new Date().toISOString(),
     };
     quizzes.set(id, quiz);
@@ -138,7 +141,8 @@ export const answerQuestion = defineTool<AnswerQuestionParams>({
     const question = quiz.questions[question_id];
     if (!question) return err(`No question #${question_id} in this quiz`);
 
-    quiz.answers.set(question.id, answer_index);
+    const updated = { ...quiz, answers: { ...quiz.answers, [question.id]: answer_index }, answeredCount: (quiz.answeredCount || 0) + 1 };
+    quizzes.set(quiz_id, updated);
 
     const correct = answer_index === question.correctIndex;
     const correctAnswer = question.options[question.correctIndex];
@@ -178,14 +182,14 @@ export const getScore = defineTool<GetScoreParams>({
     if (!quiz) return err(`No quiz found with ID "${quiz_id}"`);
 
     let correctCount = 0;
-    for (const [qId, answerIdx] of quiz.answers.entries()) {
-      if (quiz.questions[qId].correctIndex === answerIdx) {
+    for (const [qId, answerIdx] of Object.entries(quiz.answers)) {
+      if (quiz.questions[Number(qId)]?.correctIndex === answerIdx) {
         correctCount++;
       }
     }
 
     const total = quiz.questions.length;
-    const answered = quiz.answers.size;
+    const answered = Object.keys(quiz.answers).length;
     const percentage = answered > 0 ? Math.round((correctCount / answered) * 100) : 0;
 
     return ok(

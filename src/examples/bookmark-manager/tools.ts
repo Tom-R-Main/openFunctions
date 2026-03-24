@@ -10,7 +10,7 @@
  *   - Building something an AI can use as "memory"
  */
 
-import { defineTool, ok, err } from "../../framework/index.js";
+import { defineTool, ok, err, createStore } from "../../framework/index.js";
 
 // ─── Data ──────────────────────────────────────────────────────────────────
 
@@ -28,8 +28,9 @@ interface SaveLinkParams { url: string; title: string; tags?: string[]; note?: s
 interface SearchLinksParams { query: string; tag?: string }
 interface TagLinkParams { id: string; tags: string[] }
 
-const bookmarks = new Map<string, Bookmark>();
-let nextId = 1;
+/** Persistent store — data saved to .data/bookmarks.json, survives restarts */
+const bookmarks = createStore<Bookmark>("bookmarks");
+let nextId = bookmarks.size + 1;
 
 // ─── Tools ─────────────────────────────────────────────────────────────────
 
@@ -99,7 +100,7 @@ export const searchLinks = defineTool<SearchLinksParams>({
   tags: ["knowledge", "bookmarks"],
   handler: async ({ query, tag }) => {
     const q = query.toLowerCase();
-    let results = Array.from(bookmarks.values()).filter(
+    let results = bookmarks.getAll().filter(
       (b) =>
         b.title.toLowerCase().includes(q) ||
         b.url.toLowerCase().includes(q) ||
@@ -146,11 +147,12 @@ export const tagLink = defineTool<TagLinkParams>({
     const newTags = tags.filter(
       (t) => !bookmark.tags.includes(t),
     );
-    bookmark.tags.push(...newTags);
+    const updated = { ...bookmark, tags: [...bookmark.tags, ...newTags] };
+    bookmarks.set(id, updated);
 
     return ok(
-      bookmark,
-      `Added ${newTags.length} tag${newTags.length === 1 ? "" : "s"} to "${bookmark.title}"`,
+      updated,
+      `Added ${newTags.length} tag${newTags.length === 1 ? "" : "s"} to "${updated.title}"`,
     );
   },
 });

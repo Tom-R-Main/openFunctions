@@ -12,7 +12,7 @@
  * In a real app, you'd replace the in-memory Map with a database.
  */
 
-import { defineTool, ok, err } from "../../framework/index.js";
+import { defineTool, ok, err, createStore } from "../../framework/index.js";
 
 // ─── Data ──────────────────────────────────────────────────────────────────
 
@@ -30,9 +30,9 @@ interface CreateTaskParams { title: string; subject: string; due?: string }
 interface ListTasksParams { subject?: string; completed?: boolean }
 interface CompleteTaskParams { id: string }
 
-/** In-memory store — resets when the server restarts */
-const tasks = new Map<string, Task>();
-let nextId = 1;
+/** Persistent store — data saved to .data/tasks.json, survives restarts */
+const tasks = createStore<Task>("tasks");
+let nextId = tasks.size + 1;
 
 // ─── Tools ─────────────────────────────────────────────────────────────────
 
@@ -109,7 +109,7 @@ export const listTasks = defineTool<ListTasksParams>({
   },
   tags: ["productivity", "study"],
   handler: async ({ subject, completed }) => {
-    let result = Array.from(tasks.values());
+    let result = tasks.getAll();
 
     if (subject) {
       result = result.filter(
@@ -147,8 +147,9 @@ export const completeTask = defineTool<CompleteTaskParams>({
     if (!task) {
       return err(`No task found with ID "${id}"`);
     }
-    task.completed = true;
-    return ok(task, `Completed: "${task.title}"`);
+    const updated = { ...task, completed: true };
+    tasks.set(id, updated);
+    return ok(updated, `Completed: "${updated.title}"`);
   },
 });
 
