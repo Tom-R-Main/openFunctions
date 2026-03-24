@@ -32,6 +32,9 @@ export { defineTool, ok, err } from "./tool.js";
 export { createStore } from "./store.js";
 export type { Store } from "./store.js";
 
+// Postgres store (optional — requires DATABASE_URL)
+export { createPgStore, closePgPool } from "./pg-store.js";
+
 // Tool registry
 export { ToolRegistry, registry } from "./registry.js";
 
