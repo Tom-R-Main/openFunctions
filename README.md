@@ -9,14 +9,17 @@
 <p align="center">
   <a href="#quick-start">Quick Start</a> &middot;
   <a href="#build-your-own-tools">Build Tools</a> &middot;
-  <a href="#ai-providers">AI Providers</a> &middot;
-  <a href="#system-prompts">System Prompts</a> &middot;
+  <a href="#ai-providers">Providers</a> &middot;
+  <a href="#agents--crews">Agents</a> &middot;
+  <a href="#workflows">Workflows</a> &middot;
+  <a href="#memory">Memory</a> &middot;
+  <a href="#rag">RAG</a> &middot;
   <a href="#example-domains-26-tools">Examples</a>
 </p>
 
 ---
 
-openFunctions is a TypeScript framework for building [MCP](https://modelcontextprotocol.io) (Model Context Protocol) servers — the open standard for giving AI agents tools to call. Your tools work with Claude, Gemini, ChatGPT, Grok, and any MCP-compatible client, with zero rewriting.
+openFunctions is a modular TypeScript framework for building AI agent tools and [MCP](https://modelcontextprotocol.io) servers. Start simple — define a tool in 10 lines. Scale up to multi-agent crews, workflows, RAG, and memory when you need them. Your tools work with Claude, Gemini, ChatGPT, Grok, and any MCP-compatible client.
 
 ```
 ┌──────────────────────────────────────────────────────────────┐
@@ -36,31 +39,25 @@ openFunctions is a TypeScript framework for building [MCP](https://modelcontextp
 git clone https://github.com/Tom-R-Main/openFunctions.git
 cd openFunctions
 bash setup.sh
+cp .env.example .env   # add your API key(s)
 ```
-
-That's it. You have a working MCP server with 26 example tools across 9 domains.
 
 ## Commands
 
 ```bash
-npm run test-tools          # Interactive CLI — test any tool, no API key needed
-npm run dev                 # Dev mode — auto-restarts when you edit code
+npm run test-tools          # Interactive CLI — test tools, no API key needed
+npm run dev                 # Dev mode — auto-restarts on save
 npm test                    # Run all automated tests
-npm run chat                # Chat with AI using your tools (auto-detects API key)
-npm run chat -- gemini      # Chat with Gemini specifically
-npm run chat -- openai      # Chat with OpenAI (GPT-5.4)
-npm run chat -- anthropic   # Chat with Claude (Sonnet 4.6)
-npm run chat -- xai         # Chat with Grok (4.2)
-npm run chat -- openrouter  # Chat via OpenRouter (any model)
+npm run chat                # Chat with AI using your tools (auto-detects key)
+npm run chat -- gemini      # Specific provider
+npm run chat -- gemini --prompt study-buddy   # With custom persona
 npm run create-tool <name>  # Scaffold a new tool with tests
-npm run docs                # Generate markdown reference of all tools
-npm run inspect             # MCP Inspector — visual web UI
+npm run docs                # Generate tool reference docs
+npm run inspect             # MCP Inspector web UI
 npm start                   # Start MCP server for Claude Desktop / Cursor
 ```
 
 ## Build Your Own Tools
-
-Open `src/my-tools/index.ts` and start building. Here's the simplest possible tool:
 
 ```typescript
 import { defineTool, ok } from "../framework/index.js";
@@ -79,160 +76,186 @@ export const rollDice = defineTool({
     return ok({ rolled: result });
   },
 });
-
-export const myTools = [rollDice];
 ```
 
-Or scaffold a new tool with one command:
-
-```bash
-npm run create-tool expense_tracker
-# → Creates src/my-tools/expense_tracker.ts with full pattern + passing test
-# → Auto-registers in src/my-tools/index.ts
-```
-
-For full examples with typed params, persistence, and error handling, see `src/examples/`.
+Or scaffold with one command: `npm run create-tool expense_tracker`
 
 ## Testing
 
-Tests live inside tool definitions — no separate test files needed:
+Tests live inside tool definitions — no separate files:
 
 ```typescript
-export const createTask = defineTool({
+defineTool({
   name: "create_task",
-  // ...schema and handler...
+  // ...
   tests: [
-    {
-      name: "creates a task with title and subject",
-      input: { title: "Read chapter 5", subject: "Biology" },
-      expect: { success: true, data: { title: "Read chapter 5", completed: false } },
-    },
-    {
-      name: "fails without required field",
-      input: { title: "Read chapter 5" },
-      expect: { success: false, errorContains: "Required parameter" },
-    },
+    { name: "creates a task", input: { title: "Read ch5", subject: "Bio" }, expect: { success: true } },
+    { name: "fails without subject", input: { title: "Read ch5" }, expect: { success: false } },
   ],
 });
 ```
 
-```bash
-npm test
-```
-
-Parameters are automatically validated against the `inputSchema` before the handler runs. Missing required fields, wrong types, and invalid enum values are caught with clear error messages — no validation code needed in your handlers.
+Parameters are validated against `inputSchema` automatically — missing fields, wrong types, and invalid enums are caught before the handler runs.
 
 ## Persistence
 
-Three tiers — pick what fits:
-
 ```typescript
-// Tier 1: JSON files (zero setup, saves to .data/<name>.json)
-import { createStore } from "../framework/index.js";
+// JSON files (zero setup)
 const tasks = createStore<Task>("tasks");
 
-// Tier 2: Postgres (same API, needs DATABASE_URL env var)
-import { createPgStore } from "../framework/index.js";
+// Postgres (same API, needs DATABASE_URL)
 const tasks = await createPgStore<Task>("tasks");
-
-// Tier 3: Roll your own (pg, Prisma, whatever you want)
 ```
 
-Tiers 1 and 2 share the same `Store` interface: `get()`, `set()`, `delete()`, `getAll()`, `has()`, `size`, `clear()`. Switching is a one-line change.
+Same `Store` interface — switching is a one-line change.
 
 ## AI Providers
 
-Chat with any provider using your tools. Set your API keys in a `.env` file (never committed to git):
-
 ```bash
-cp .env.example .env
-# Edit .env and add your key(s) — you only need ONE to get started
+cp .env.example .env    # add your key(s) — you only need ONE
+npm run chat            # auto-detects provider
 ```
 
-Then chat:
-
-```bash
-npm run chat                    # auto-detects from whichever key is set
-```
-
-| Provider | Default Model | Tool Format |
-|----------|---------------|-------------|
+| Provider | Default Model | API |
+|----------|---------------|-----|
 | Gemini | `gemini-3-flash-preview` | Function calling |
 | OpenAI | `gpt-5.4` | Responses API |
-| Anthropic | `claude-sonnet-4-6` | Messages API + tool_use |
+| Anthropic | `claude-sonnet-4-6` | Messages + tool_use |
 | xAI | `grok-4.20-0309-reasoning` | Responses API |
 | OpenRouter | `google/gemini-3-flash-preview` | OpenAI-compatible |
 
-Override the model by passing it after the provider name:
-
-```bash
-npm run chat -- gemini gemini-2.5-flash
-npm run chat -- openai gpt-5.4-pro
-npm run chat -- xai grok-3
-npm run chat -- openrouter anthropic/claude-sonnet-4-6
-```
-
-### MCP Clients (Claude Desktop, Cursor, etc.)
-
-See [claude-config/README.md](claude-config/README.md) for setup instructions.
+Override any model: `npm run chat -- openai gpt-5.4-pro`
 
 ## System Prompts
 
-Customize how the AI behaves with composable system prompts:
+Composable presets that shape AI behavior:
 
 ```bash
-npm run chat -- gemini --prompt study-buddy          # use a preset
-npm run chat -- gemini --prompt strict-tools         # force tool usage
-npm run chat -- gemini --prompt "You are a pirate"   # inline prompt
+npm run chat -- gemini --prompt study-buddy       # preset
+npm run chat -- gemini --prompt "You are a pirate" # inline
 ```
 
-**5 presets ship with the framework** in `system-prompts/`:
-
-| Preset | Behavior |
-|--------|----------|
-| `default` | General helpful assistant |
-| `study-buddy` | Creates tasks immediately, encourages, offers flashcards |
-| `code-tutor` | Asks clarifying questions, gives hints not answers |
-| `strict-tools` | Refuses to answer without a tool |
-| `workshop-helper` | Live event mode — concise, shows code, ends with next step |
-
-**Create your own** at `system-prompts/my-preset.md`:
-
-```markdown
----
-name: My Preset
----
-<role>
-You are a fitness coach who tracks workouts.
-</role>
-
-<rules>
-- Always use log_workout when the user describes an exercise
-- Use get_stats to show weekly progress
-- Be motivating but not cheesy
-</rules>
-
-{{tools}}
-```
-
-The `{{tools}}` placeholder auto-expands to usage guidance generated from all registered tools — updates automatically when you add new tools.
-
-**Programmatic composition** is also available:
+Ships with 5 presets: `default`, `study-buddy`, `code-tutor`, `strict-tools`, `workshop-helper`. Create your own at `system-prompts/my-preset.md` with `{{tools}}` auto-expansion.
 
 ```typescript
-import { composePrompt, autoToolGuide, registry } from "./framework/index.js";
-
+// Or compose programmatically
 const prompt = composePrompt({
-  role: "You are a friendly study assistant.",
-  rules: ["Always use tools — never guess.", "Be concise."],
+  role: "You are a study assistant.",
+  rules: ["Always use tools — never guess."],
   toolGuide: autoToolGuide(registry),
-  format: "Use bullet points.",
 });
 ```
 
-## Example Domains (26 tools)
+## Agents & Crews
 
-Every domain has a complete reference implementation in `src/examples/`:
+Define agent personas with role/goal and a subset of tools. Run them individually or as sequential/parallel crews:
+
+```typescript
+import { defineAgent, runCrew } from "./framework/index.js";
+
+const researcher = defineAgent({
+  name: "researcher",
+  role: "Research Analyst",
+  goal: "Find accurate information using available tools",
+  toolTags: ["search", "web"],
+});
+
+const writer = defineAgent({
+  name: "writer",
+  role: "Content Writer",
+  goal: "Write clear articles from research findings",
+  tools: ["save_note"],
+});
+
+const result = await runCrew(
+  { agents: [researcher, writer], mode: "sequential" },
+  "Write about the MCP protocol",
+  adapter, registry,
+);
+```
+
+Agents can delegate to each other via synthetic tools when `delegation: true`.
+
+## Workflows
+
+Deterministic, code-driven pipelines. Chain tools, add branching, run steps in parallel:
+
+```typescript
+import { pipe, toolStep, llmStep } from "./framework/index.js";
+
+const research = pipe(toolStep(registry, "define_word"))
+  .then(async (result) => result.data?.meanings?.[0] ?? "")
+  .then(llmStep(adapter, registry, "Explain this simply: {{input}}"));
+
+await research.run({ word: "ephemeral" });
+```
+
+Supports `.then()`, `.parallel()`, and `.branch()` for conditional routing.
+
+## Memory
+
+Conversation threads and long-term fact storage:
+
+```typescript
+import { createConversationMemory, createFactMemory, createMemoryTools } from "./framework/index.js";
+
+const conversations = createConversationMemory();
+const facts = createFactMemory();
+
+// Give the AI memory capabilities via tools
+registry.registerAll(createMemoryTools(conversations, facts));
+// → store_fact, recall_facts, list_threads, get_thread
+```
+
+Backed by the Store interface — defaults to JSON files, swap to Postgres with `createPgStore`.
+
+## Structured Output
+
+Force the AI to return typed JSON matching a schema:
+
+```typescript
+import { forceStructuredOutput } from "./framework/index.js";
+
+const result = await forceStructuredOutput<{
+  sentiment: "positive" | "negative" | "neutral";
+  confidence: number;
+}>(adapter, {
+  schema: {
+    type: "object",
+    properties: {
+      sentiment: { type: "string", enum: ["positive", "negative", "neutral"] },
+      confidence: { type: "number", description: "0.0 to 1.0" },
+    },
+    required: ["sentiment", "confidence"],
+  },
+  prompt: "Analyze: 'I love this framework!'",
+});
+// result.data.sentiment === "positive"
+```
+
+## RAG
+
+Retrieval-Augmented Generation with pgvector. Add documents, search by semantic similarity:
+
+```typescript
+import { createRAG } from "./framework/index.js";
+
+const rag = await createRAG({ embeddingProvider: "gemini" });
+
+await rag.addDocument("Mitosis is the process of cell division...");
+await rag.addDocument("Photosynthesis converts light energy...");
+
+const results = await rag.search("How does cell division work?");
+// → [{ content: "Mitosis is the process...", distance: 0.25 }]
+
+// Or give the AI RAG tools directly
+registry.registerAll(rag.createTools());
+// → add_document, search_documents
+```
+
+Requires Postgres with pgvector (`docker run pgvector/pgvector:pg16`). Supports Gemini Embedding 2 (768/1536/3072 dim) or OpenAI embeddings. User-configurable dimensions.
+
+## Example Domains (26 tools)
 
 | Domain | Tools | Pattern |
 |--------|-------|---------|
@@ -245,77 +268,63 @@ Every domain has a complete reference implementation in `src/examples/`:
 | Quiz Generator | `create_quiz`, `answer_question`, `get_score` | Stateful Game |
 | AI Tools | `summarize_text`, `generate_flashcards` | Tool Calls an LLM |
 | Utilities | `calculate`, `convert_units`, `format_date` | Stateless Helpers |
-| **Or invent your own!** | Whatever you want | You decide |
 
 ## Project Structure
 
 ```
 openFunctions/
 ├── src/
-│   ├── framework/              # Core framework (you don't need to edit this)
+│   ├── framework/              # Core framework
 │   │   ├── tool.ts             # defineTool(), ok(), err()
 │   │   ├── registry.ts         # Tool registry + provider format adapters
 │   │   ├── server.ts           # MCP server wrapper
-│   │   ├── store.ts            # JSON file persistence (createStore)
-│   │   ├── pg-store.ts         # Postgres persistence (createPgStore)
+│   │   ├── store.ts            # JSON file persistence
+│   │   ├── pg-store.ts         # Postgres persistence
 │   │   ├── validate.ts         # Runtime parameter validation
 │   │   ├── test-runner.ts      # Built-in test framework
-│   │   ├── prompts.ts          # Composable system prompt engine
+│   │   ├── prompts.ts          # Composable system prompts
+│   │   ├── agents.ts           # defineAgent(), runCrew()
+│   │   ├── workflows.ts        # pipe(), parallel(), branch()
+│   │   ├── memory.ts           # Conversation threads + fact memory
+│   │   ├── structured.ts       # Structured JSON output
+│   │   ├── rag.ts              # pgvector RAG with embeddings
+│   │   ├── env.ts              # .env file loader
 │   │   ├── adapters/           # AI provider adapters
 │   │   │   ├── gemini.ts       # Google AI Studio
-│   │   │   ├── openai.ts       # OpenAI Responses API + OpenRouter
+│   │   │   ├── openai.ts       # OpenAI + OpenRouter
 │   │   │   ├── anthropic.ts    # Anthropic Claude
 │   │   │   ├── xai.ts          # xAI Grok
-│   │   │   └── chat.ts         # Shared interactive chat loop
+│   │   │   └── chat.ts         # Shared chat loop
 │   │   └── types.ts            # TypeScript interfaces
-│   ├── examples/               # 9 domains, 26 tools — read these to learn
-│   │   ├── study-tracker/      # CRUD pattern (beginner)
-│   │   ├── bookmark-manager/   # Arrays + search (beginner)
-│   │   ├── recipe-keeper/      # Nested data + random (beginner)
-│   │   ├── expense-splitter/   # Math + calculations (intermediate)
-│   │   ├── workout-logger/     # Date filtering + stats (intermediate)
-│   │   ├── dictionary/         # External API wrapper (intermediate)
-│   │   ├── quiz-generator/     # Stateful game (advanced)
-│   │   ├── ai-tools/           # Tool calls an LLM (advanced)
-│   │   └── utilities/          # Stateless helpers (beginner)
-│   ├── my-tools/               # YOUR tools go here
-│   │   └── index.ts            # Start building!
-│   └── index.ts                # Entry point — registers tools, starts MCP server
-├── scripts/
-│   ├── chat.ts                 # Unified AI chat (multi-provider)
-│   ├── create-tool.ts          # Tool scaffolder
-│   └── generate-docs.ts        # Docs generator
-├── test-client/
-│   ├── cli.ts                  # Interactive CLI tool tester
-│   └── run-tests.ts            # Test runner entry point
-├── claude-config/
-│   └── README.md               # Claude Desktop setup instructions
-├── system-prompts/             # Composable system prompt presets
-│   ├── default.md              # Default behavior
-│   ├── study-buddy.md          # Study assistant persona
-│   ├── code-tutor.md           # Patient coding tutor
-│   ├── strict-tools.md         # Forces tool usage
-│   └── workshop-helper.md      # Live workshop assistant
-├── CLAUDE.md                   # AI assistant context (for Cursor, Claude Code, etc.)
-├── setup.sh                    # One-command setup
+│   ├── examples/               # 9 domains, 26 tools
+│   ├── my-tools/               # Your tools go here
+│   └── index.ts                # Entry point
+├── scripts/                    # chat, create-tool, docs
+├── test-client/                # CLI tester + test runner
+├── system-prompts/             # 5 composable presets
+├── CLAUDE.md                   # AI assistant context
+├── .env.example                # API key template
 └── package.json
 ```
 
-## How It Works
-
-openFunctions is built on three concepts:
-
-**1. Tools** — Functions an AI can call. Each tool has a name, description (the AI reads this to decide when to use it), a JSON Schema for parameters, and a handler function. Parameters are validated automatically before the handler runs.
-
-**2. Registry** — Manages all your tools and converts them to the format each AI provider expects. Define once, use with Claude (MCP), Gemini (function calling), OpenAI (Responses API), xAI Grok, or any OpenAI-compatible provider like OpenRouter.
-
-**3. MCP Server** — Exposes your tools over the [Model Context Protocol](https://modelcontextprotocol.io), the open standard for AI tool interoperability. Any MCP client (Claude Desktop, Cursor, Claude.ai, etc.) can discover and call your tools.
-
 ## Architecture
 
-This framework is derived from [ExecuFunction](https://execufunction.com)'s production tool system, which powers ~150 AI-callable tools across task management, calendar, knowledge, code search, and more. openFunctions extracts the core pattern and strips away the production complexity (auth, RLS, activity events, billing) so you can focus on building tools.
+Derived from [ExecuFunction](https://execufunction.com)'s production tool system (~150 AI-callable tools). openFunctions extracts the core patterns and makes them modular — use only what you need:
 
-The key insight: **the AI model is interchangeable, but the tool layer is what makes agents actually useful.** openFunctions proves this by making the same tool definitions work across Claude, Gemini, ChatGPT, Grok, OpenRouter, and any MCP client.
+| Module | What It Does | Requires |
+|--------|-------------|----------|
+| **Core** | defineTool, registry, MCP server, validation | Nothing |
+| **Store** | JSON file persistence | Nothing |
+| **Pg Store** | Postgres persistence | `DATABASE_URL` |
+| **Adapters** | 5 AI providers + chat loop | API key |
+| **Prompts** | Composable system prompts | Nothing |
+| **Agents** | Personas, crews, delegation | Adapter |
+| **Workflows** | pipe, parallel, branch | Nothing |
+| **Memory** | Threads + facts + AI tools | Nothing |
+| **Structured** | Force typed JSON output | Adapter |
+| **RAG** | pgvector embeddings + search | `DATABASE_URL` + API key |
+
+**The key insight: the AI model is interchangeable, but the tool layer is what makes agents useful.**
 
 ## License
 
