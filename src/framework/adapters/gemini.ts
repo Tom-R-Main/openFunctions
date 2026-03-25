@@ -5,7 +5,7 @@
  * Default model: gemini-3-flash-preview
  */
 
-import type { AIAdapter, AdapterConfig, ChatMessage, AdapterResponse } from "./types.js";
+import type { AIAdapter, AdapterConfig, ChatMessage, ChatOptions, AdapterResponse } from "./types.js";
 import type { ToolRegistry } from "../registry.js";
 
 export function createGeminiAdapter(config?: Partial<AdapterConfig>): AIAdapter {
@@ -24,7 +24,7 @@ export function createGeminiAdapter(config?: Partial<AdapterConfig>): AIAdapter 
     name: config?.name ?? "Gemini",
     model,
 
-    async chat(messages: ChatMessage[], registry: ToolRegistry): Promise<AdapterResponse> {
+    async chat(messages: ChatMessage[], registry: ToolRegistry, options?: ChatOptions): Promise<AdapterResponse> {
       const contents = messages.map((msg) => {
         if (msg.role === "tool") {
           return {
@@ -43,7 +43,7 @@ export function createGeminiAdapter(config?: Partial<AdapterConfig>): AIAdapter 
         };
       });
 
-      const body = {
+      const body: Record<string, unknown> = {
         contents,
         tools: [{ functionDeclarations: registry.toGeminiFormat() }],
         generationConfig: { temperature: 0.7, maxOutputTokens: 2048 },
@@ -51,6 +51,14 @@ export function createGeminiAdapter(config?: Partial<AdapterConfig>): AIAdapter 
           parts: [{ text: systemPrompt }],
         },
       };
+
+      // Tool choice support
+      if (options?.toolChoice) {
+        const mode = options.toolChoice === "required" ? "ANY"
+          : typeof options.toolChoice === "object" ? "ANY"
+          : "AUTO";
+        body.toolConfig = { functionCallingConfig: { mode } };
+      }
 
       const response = await fetch(url, {
         method: "POST",

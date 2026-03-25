@@ -43,6 +43,12 @@ export interface AdapterConfig {
   systemPrompt?: string;
 }
 
+/** Options for controlling AI behavior on a per-call basis */
+export interface ChatOptions {
+  /** Control tool calling: "auto" (default), "required" (must call a tool), or specific tool name */
+  toolChoice?: "auto" | "required" | { name: string };
+}
+
 /** An AI provider adapter */
 export interface AIAdapter {
   /** Provider name for display */
@@ -58,6 +64,7 @@ export interface AIAdapter {
   chat(
     messages: ChatMessage[],
     registry: ToolRegistry,
+    options?: ChatOptions,
   ): Promise<AdapterResponse>;
 }
 

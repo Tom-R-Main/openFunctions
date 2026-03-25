@@ -5,7 +5,7 @@
  * Default model: claude-sonnet-4-6
  */
 
-import type { AIAdapter, AdapterConfig, ChatMessage, AdapterResponse } from "./types.js";
+import type { AIAdapter, AdapterConfig, ChatMessage, ChatOptions, AdapterResponse } from "./types.js";
 import type { ToolRegistry } from "../registry.js";
 
 export function createAnthropicAdapter(config?: Partial<AdapterConfig>): AIAdapter {
@@ -23,7 +23,7 @@ export function createAnthropicAdapter(config?: Partial<AdapterConfig>): AIAdapt
     name: config?.name ?? "Claude",
     model,
 
-    async chat(messages: ChatMessage[], registry: ToolRegistry): Promise<AdapterResponse> {
+    async chat(messages: ChatMessage[], registry: ToolRegistry, options?: ChatOptions): Promise<AdapterResponse> {
       // Convert messages to Anthropic format
       const anthropicMessages: any[] = [];
 
@@ -63,13 +63,20 @@ export function createAnthropicAdapter(config?: Partial<AdapterConfig>): AIAdapt
         }
       }
 
-      const body = {
+      const body: Record<string, unknown> = {
         model,
         max_tokens: 2048,
         system: systemPrompt,
         messages: anthropicMessages,
         tools: registry.toAnthropicFormat(),
       };
+
+      // Tool choice support
+      if (options?.toolChoice === "required") {
+        body.tool_choice = { type: "any" };
+      } else if (typeof options?.toolChoice === "object") {
+        body.tool_choice = { type: "tool", name: options.toolChoice.name };
+      }
 
       const response = await fetch("https://api.anthropic.com/v1/messages", {
         method: "POST",

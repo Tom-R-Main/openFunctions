@@ -8,7 +8,7 @@
  * Console: https://console.x.ai
  */
 
-import type { AIAdapter, AdapterConfig, ChatMessage, AdapterResponse } from "./types.js";
+import type { AIAdapter, AdapterConfig, ChatMessage, ChatOptions, AdapterResponse } from "./types.js";
 import type { ToolRegistry } from "../registry.js";
 
 export function createXAIAdapter(config?: Partial<AdapterConfig>): AIAdapter {
@@ -27,7 +27,7 @@ export function createXAIAdapter(config?: Partial<AdapterConfig>): AIAdapter {
     name: config?.name ?? "Grok",
     model,
 
-    async chat(messages: ChatMessage[], registry: ToolRegistry): Promise<AdapterResponse> {
+    async chat(messages: ChatMessage[], registry: ToolRegistry, options?: ChatOptions): Promise<AdapterResponse> {
       // Build input for xAI Responses API
       let input: any;
 
@@ -71,6 +71,13 @@ export function createXAIAdapter(config?: Partial<AdapterConfig>): AIAdapter {
         body.previous_response_id = previousResponseId;
       } else {
         body.instructions = systemPrompt;
+      }
+
+      // Tool choice support
+      if (options?.toolChoice === "required") {
+        body.tool_choice = "required";
+      } else if (typeof options?.toolChoice === "object") {
+        body.tool_choice = { type: "function", name: options.toolChoice.name };
       }
 
       const response = await fetch("https://api.x.ai/v1/responses", {

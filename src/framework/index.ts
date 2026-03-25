@@ -46,6 +46,22 @@ export type { ServerOptions } from "./server.js";
 export { composePrompt, autoToolGuide, loadPromptPreset, resolvePrompt, listPresets } from "./prompts.js";
 export type { PromptOptions } from "./prompts.js";
 
+// Structured output
+export { forceStructuredOutput, createExtractor } from "./structured.js";
+export type { StructuredOutputOptions, StructuredResult } from "./structured.js";
+
+// Memory
+export { createConversationMemory, createFactMemory, createMemoryTools } from "./memory.js";
+export type { Thread, Fact, ConversationMemory, FactMemory } from "./memory.js";
+
+// Workflows
+export { pipe, toolStep, llmStep } from "./workflows.js";
+export type { Step, Workflow } from "./workflows.js";
+
+// Agents
+export { defineAgent, runCrew } from "./agents.js";
+export type { AgentDefinition, Agent, AgentResult, CrewOptions, CrewResult } from "./agents.js";
+
 // Test runner
 export { runTests } from "./test-runner.js";
 

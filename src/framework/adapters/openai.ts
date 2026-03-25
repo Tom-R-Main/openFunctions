@@ -7,7 +7,7 @@
  * Any OpenAI-compatible provider can be added with createChatCompletionsAdapter().
  */
 
-import type { AIAdapter, AdapterConfig, ChatMessage, AdapterResponse } from "./types.js";
+import type { AIAdapter, AdapterConfig, ChatMessage, ChatOptions, AdapterResponse } from "./types.js";
 import type { ToolRegistry } from "../registry.js";
 
 // ─── OpenAI Responses API ──────────────────────────────────────────────────
@@ -28,7 +28,7 @@ export function createOpenAIAdapter(config?: Partial<AdapterConfig>): AIAdapter 
     name: config?.name ?? "OpenAI",
     model,
 
-    async chat(messages: ChatMessage[], registry: ToolRegistry): Promise<AdapterResponse> {
+    async chat(messages: ChatMessage[], registry: ToolRegistry, options?: ChatOptions): Promise<AdapterResponse> {
       let input: any;
 
       if (previousResponseId) {
@@ -66,6 +66,13 @@ export function createOpenAIAdapter(config?: Partial<AdapterConfig>): AIAdapter 
         body.previous_response_id = previousResponseId;
       } else {
         body.instructions = systemPrompt;
+      }
+
+      // Tool choice support
+      if (options?.toolChoice === "required") {
+        body.tool_choice = "required";
+      } else if (typeof options?.toolChoice === "object") {
+        body.tool_choice = { type: "function", name: options.toolChoice.name };
       }
 
       const response = await fetch("https://api.openai.com/v1/responses", {
@@ -129,7 +136,7 @@ function createChatCompletionsAdapter(config: ChatCompletionsConfig): AIAdapter 
     name,
     model,
 
-    async chat(messages: ChatMessage[], registry: ToolRegistry): Promise<AdapterResponse> {
+    async chat(messages: ChatMessage[], registry: ToolRegistry, options?: ChatOptions): Promise<AdapterResponse> {
       const openaiMessages: any[] = [{
         role: "system",
         content: sysPrompt,
@@ -163,13 +170,20 @@ function createChatCompletionsAdapter(config: ChatCompletionsConfig): AIAdapter 
         }
       }
 
-      const body = {
+      const body: Record<string, unknown> = {
         model,
         messages: openaiMessages,
         tools: registry.toOpenAIFormat(),
         temperature: 0.7,
         max_tokens: 2048,
       };
+
+      // Tool choice support
+      if (options?.toolChoice === "required") {
+        body.tool_choice = "required";
+      } else if (typeof options?.toolChoice === "object") {
+        body.tool_choice = { type: "function", function: { name: options.toolChoice.name } };
+      }
 
       const response = await fetch(`${baseUrl}/chat/completions`, {
         method: "POST",
