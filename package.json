@@ -11,6 +11,7 @@
     "start": "tsx src/index.ts",
     "dev": "tsx watch src/index.ts",
     "test-tools": "tsx test-client/cli.ts",
+    "chat": "tsx scripts/chat.ts",
     "gemini": "tsx gemini-bridge/test-with-gemini.ts",
     "test": "tsx test-client/run-tests.ts",
     "create-tool": "tsx scripts/create-tool.ts",
