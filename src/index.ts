@@ -1,3 +1,6 @@
+// Load .env file if it exists
+import "./framework/env.js";
+
 /**
  * OpenFunction — Entry Point
  *

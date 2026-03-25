@@ -1,4 +1,7 @@
 #!/usr/bin/env tsx
+// Load .env file if it exists (API keys, DATABASE_URL, etc.)
+import "../src/framework/env.js";
+
 /**
  * OpenFunction — Unified AI Chat
  *
