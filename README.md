@@ -10,6 +10,7 @@
   <a href="#quick-start">Quick Start</a> &middot;
   <a href="#build-your-own-tools">Build Tools</a> &middot;
   <a href="#ai-providers">AI Providers</a> &middot;
+  <a href="#system-prompts">System Prompts</a> &middot;
   <a href="#example-domains-26-tools">Examples</a>
 </p>
 
@@ -18,15 +19,15 @@
 openFunctions is a TypeScript framework for building [MCP](https://modelcontextprotocol.io) (Model Context Protocol) servers — the open standard for giving AI agents tools to call. Your tools work with Claude, Gemini, ChatGPT, Grok, and any MCP-compatible client, with zero rewriting.
 
 ```
-┌─────────────────────────────────────────────────────────┐
-│                  Your Tool Definitions                   │
-│              (define once with openFunctions)             │
-└──────┬──────────┬──────────┬──────────┬────────────────┘
-       │          │          │          │
-  ┌────▼────┐ ┌──▼───┐ ┌───▼───┐ ┌───▼────────┐
-  │ Claude  │ │Gemini│ │ChatGPT│ │ Grok │ │ OpenRouter  │
-  │  (MCP)  │ │      │ │       │ │      │ │ (any model) │
-  └─────────┘ └──────┘ └───────┘ └──────┘ └────────────┘
+┌──────────────────────────────────────────────────────────────┐
+│                    Your Tool Definitions                      │
+│               (define once with openFunctions)                │
+└────┬──────────┬──────────┬──────────┬──────────┬────────────┘
+     │          │          │          │          │
+┌────▼────┐ ┌──▼───┐ ┌───▼───┐ ┌───▼───┐ ┌───▼────────┐
+│ Claude  │ │Gemini│ │ChatGPT│ │ Grok  │ │ OpenRouter  │
+│  (MCP)  │ │      │ │       │ │       │ │ (any model) │
+└─────────┘ └──────┘ └───────┘ └───────┘ └────────────┘
 ```
 
 ## Quick Start
@@ -161,11 +162,72 @@ npm run chat                    # auto-detects from whichever key is set
 | xAI | `grok-4.20-0309-reasoning` | Responses API |
 | OpenRouter | `google/gemini-3-flash-preview` | OpenAI-compatible |
 
-Override the model with environment variables: `GEMINI_MODEL`, or pass config to the adapter.
+Override the model by passing it after the provider name:
+
+```bash
+npm run chat -- gemini gemini-2.5-flash
+npm run chat -- openai gpt-5.4-pro
+npm run chat -- xai grok-3
+npm run chat -- openrouter anthropic/claude-sonnet-4-6
+```
 
 ### MCP Clients (Claude Desktop, Cursor, etc.)
 
 See [claude-config/README.md](claude-config/README.md) for setup instructions.
+
+## System Prompts
+
+Customize how the AI behaves with composable system prompts:
+
+```bash
+npm run chat -- gemini --prompt study-buddy          # use a preset
+npm run chat -- gemini --prompt strict-tools         # force tool usage
+npm run chat -- gemini --prompt "You are a pirate"   # inline prompt
+```
+
+**5 presets ship with the framework** in `system-prompts/`:
+
+| Preset | Behavior |
+|--------|----------|
+| `default` | General helpful assistant |
+| `study-buddy` | Creates tasks immediately, encourages, offers flashcards |
+| `code-tutor` | Asks clarifying questions, gives hints not answers |
+| `strict-tools` | Refuses to answer without a tool |
+| `workshop-helper` | Live event mode — concise, shows code, ends with next step |
+
+**Create your own** at `system-prompts/my-preset.md`:
+
+```markdown
+---
+name: My Preset
+---
+<role>
+You are a fitness coach who tracks workouts.
+</role>
+
+<rules>
+- Always use log_workout when the user describes an exercise
+- Use get_stats to show weekly progress
+- Be motivating but not cheesy
+</rules>
+
+{{tools}}
+```
+
+The `{{tools}}` placeholder auto-expands to usage guidance generated from all registered tools — updates automatically when you add new tools.
+
+**Programmatic composition** is also available:
+
+```typescript
+import { composePrompt, autoToolGuide, registry } from "./framework/index.js";
+
+const prompt = composePrompt({
+  role: "You are a friendly study assistant.",
+  rules: ["Always use tools — never guess.", "Be concise."],
+  toolGuide: autoToolGuide(registry),
+  format: "Use bullet points.",
+});
+```
 
 ## Example Domains (26 tools)
 
@@ -197,6 +259,7 @@ openFunctions/
 │   │   ├── pg-store.ts         # Postgres persistence (createPgStore)
 │   │   ├── validate.ts         # Runtime parameter validation
 │   │   ├── test-runner.ts      # Built-in test framework
+│   │   ├── prompts.ts          # Composable system prompt engine
 │   │   ├── adapters/           # AI provider adapters
 │   │   │   ├── gemini.ts       # Google AI Studio
 │   │   │   ├── openai.ts       # OpenAI Responses API + OpenRouter
@@ -226,6 +289,12 @@ openFunctions/
 │   └── run-tests.ts            # Test runner entry point
 ├── claude-config/
 │   └── README.md               # Claude Desktop setup instructions
+├── system-prompts/             # Composable system prompt presets
+│   ├── default.md              # Default behavior
+│   ├── study-buddy.md          # Study assistant persona
+│   ├── code-tutor.md           # Patient coding tutor
+│   ├── strict-tools.md         # Forces tool usage
+│   └── workshop-helper.md      # Live workshop assistant
 ├── CLAUDE.md                   # AI assistant context (for Cursor, Claude Code, etc.)
 ├── setup.sh                    # One-command setup
 └── package.json
