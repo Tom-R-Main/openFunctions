@@ -14,4 +14,5 @@ export type { AIAdapter, AdapterConfig, ChatMessage, AdapterResponse } from "./t
 export { createGeminiAdapter } from "./gemini.js";
 export { createOpenAIAdapter, createOpenRouterAdapter } from "./openai.js";
 export { createAnthropicAdapter } from "./anthropic.js";
+export { createXAIAdapter } from "./xai.js";
 export { startChat } from "./chat.js";

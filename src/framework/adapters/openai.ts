@@ -1,17 +1,16 @@
 /**
- * OpenAI Adapter (Responses API)
+ * OpenAI Adapter (Responses API) + OpenAI-Compatible Adapters
  *
- * Uses the modern stateful Responses API, not the legacy Chat Completions.
+ * - createOpenAIAdapter: Uses the modern stateful Responses API (OPENAI_API_KEY)
+ * - createOpenRouterAdapter: OpenAI-compatible Chat Completions (OPENROUTER_API_KEY)
  *
- * Env: OPENAI_API_KEY
- * Default model: gpt-5.4
- *
- * Also provides createOpenRouterAdapter() which uses OpenAI-compatible
- * Chat Completions format (OpenRouter doesn't support Responses API).
+ * Any OpenAI-compatible provider can be added with createChatCompletionsAdapter().
  */
 
 import type { AIAdapter, AdapterConfig, ChatMessage, AdapterResponse } from "./types.js";
 import type { ToolRegistry } from "../registry.js";
+
+// ─── OpenAI Responses API ──────────────────────────────────────────────────
 
 export function createOpenAIAdapter(config?: Partial<AdapterConfig>): AIAdapter {
   const apiKey = config?.apiKey ?? process.env.OPENAI_API_KEY;
@@ -29,31 +28,25 @@ export function createOpenAIAdapter(config?: Partial<AdapterConfig>): AIAdapter 
     model,
 
     async chat(messages: ChatMessage[], registry: ToolRegistry): Promise<AdapterResponse> {
-      // Build the input for the Responses API
       let input: any;
 
       if (previousResponseId) {
-        // Stateful: reference previous response, only send new items
         const lastMsg = messages[messages.length - 1];
         if (lastMsg.role === "tool") {
-          // Sending tool result back
           input = [{
             type: "function_call_output",
             call_id: lastMsg.toolCallId!,
             output: lastMsg.content,
           }];
         } else {
-          // New user message
           input = lastMsg.content;
-          previousResponseId = undefined; // Reset for new turn
+          previousResponseId = undefined;
         }
       } else {
-        // First message or after reset — send as string
         const lastUser = messages.filter((m) => m.role === "user").pop();
         input = lastUser?.content ?? "";
       }
 
-      // Build tool definitions — Responses API uses flat format
       const tools = registry.getAll().map((tool) => ({
         type: "function" as const,
         name: tool.name,
@@ -87,9 +80,8 @@ export function createOpenAIAdapter(config?: Partial<AdapterConfig>): AIAdapter 
       }
 
       const data = await response.json();
-      previousResponseId = data.id; // Track for stateful conversation
+      previousResponseId = data.id;
 
-      // Parse output items
       for (const item of data.output ?? []) {
         if (item.type === "function_call") {
           return {
@@ -112,31 +104,27 @@ export function createOpenAIAdapter(config?: Partial<AdapterConfig>): AIAdapter 
   };
 }
 
-/**
- * OpenRouter Adapter — uses OpenAI-compatible Chat Completions format.
- *
- * Env: OPENROUTER_API_KEY
- * Default model: google/gemini-3-flash-preview
- *
- * OpenRouter supports any model from any provider via a unified API.
- * Browse models at: https://openrouter.ai/models
- */
-export function createOpenRouterAdapter(config?: Partial<AdapterConfig>): AIAdapter {
-  const apiKey = config?.apiKey ?? process.env.OPENROUTER_API_KEY;
-  if (!apiKey) {
-    throw new Error(
-      "OPENROUTER_API_KEY not set.\nGet one at: https://openrouter.ai/keys"
-    );
-  }
+// ─── OpenAI-Compatible Chat Completions (shared by OpenRouter, xAI, etc.) ──
 
-  const model = config?.model ?? "google/gemini-3-flash-preview";
+interface ChatCompletionsConfig {
+  name: string;
+  model: string;
+  apiKey: string;
+  baseUrl: string;
+}
+
+/**
+ * Generic adapter for any OpenAI-compatible Chat Completions API.
+ * Used by OpenRouter, xAI, and any other compatible provider.
+ */
+function createChatCompletionsAdapter(config: ChatCompletionsConfig): AIAdapter {
+  const { name, model, apiKey, baseUrl } = config;
 
   return {
-    name: config?.name ?? "OpenRouter",
+    name,
     model,
 
     async chat(messages: ChatMessage[], registry: ToolRegistry): Promise<AdapterResponse> {
-      // OpenRouter uses OpenAI Chat Completions format
       const openaiMessages: any[] = [{
         role: "system",
         content: "You are a helpful assistant with access to tools. Use tools when they're relevant.",
@@ -150,7 +138,6 @@ export function createOpenRouterAdapter(config?: Partial<AdapterConfig>): AIAdap
             content: msg.content,
           });
         } else if (msg.role === "assistant" && msg.toolCallId) {
-          // Assistant message that was a tool call
           openaiMessages.push({
             role: "assistant",
             content: null,
@@ -179,7 +166,7 @@ export function createOpenRouterAdapter(config?: Partial<AdapterConfig>): AIAdap
         max_tokens: 2048,
       };
 
-      const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+      const response = await fetch(`${baseUrl}/chat/completions`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -190,12 +177,12 @@ export function createOpenRouterAdapter(config?: Partial<AdapterConfig>): AIAdap
 
       if (!response.ok) {
         const error = await response.text();
-        throw new Error(`OpenRouter API error (${response.status}): ${error}`);
+        throw new Error(`${name} API error (${response.status}): ${error}`);
       }
 
       const data = await response.json();
       const choice = data.choices?.[0];
-      if (!choice) throw new Error("No response from OpenRouter");
+      if (!choice) throw new Error(`No response from ${name}`);
 
       const toolCall = choice.message?.tool_calls?.[0];
       if (toolCall) {
@@ -212,3 +199,29 @@ export function createOpenRouterAdapter(config?: Partial<AdapterConfig>): AIAdap
     },
   };
 }
+
+// ─── OpenRouter ────────────────────────────────────────────────────────────
+
+/**
+ * OpenRouter — any model from any provider via a unified API.
+ *
+ * Env: OPENROUTER_API_KEY
+ * Default model: google/gemini-3-flash-preview
+ * Browse models: https://openrouter.ai/models
+ */
+export function createOpenRouterAdapter(config?: Partial<AdapterConfig>): AIAdapter {
+  const apiKey = config?.apiKey ?? process.env.OPENROUTER_API_KEY;
+  if (!apiKey) {
+    throw new Error(
+      "OPENROUTER_API_KEY not set.\nGet one at: https://openrouter.ai/keys"
+    );
+  }
+
+  return createChatCompletionsAdapter({
+    name: config?.name ?? "OpenRouter",
+    model: config?.model ?? "google/gemini-3-flash-preview",
+    apiKey,
+    baseUrl: "https://openrouter.ai/api/v1",
+  });
+}
+

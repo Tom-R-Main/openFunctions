@@ -18,6 +18,7 @@ import {
   createOpenAIAdapter,
   createOpenRouterAdapter,
   createAnthropicAdapter,
+  createXAIAdapter,
   startChat,
 } from "../src/framework/adapters/index.js";
 import type { AIAdapter } from "../src/framework/adapters/index.js";
@@ -65,12 +66,16 @@ function createAdapter(): AIAdapter {
         return createAnthropicAdapter(opts);
       case "openrouter":
         return createOpenRouterAdapter(opts);
+      case "xai":
+      case "grok":
+        return createXAIAdapter(opts);
       default:
         console.error(`\n  Unknown provider: "${provider}"`);
-        console.error("  Available: gemini, openai, anthropic, openrouter\n");
+        console.error("  Available: gemini, openai, anthropic, openrouter, xai\n");
         console.error("  Optional model override:");
         console.error("    npm run chat -- gemini gemini-2.5-flash");
         console.error("    npm run chat -- openai gpt-5.4-pro");
+        console.error("    npm run chat -- xai grok-3");
         console.error("    npm run chat -- openrouter anthropic/claude-sonnet-4-6\n");
         process.exit(1);
     }
@@ -81,12 +86,14 @@ function createAdapter(): AIAdapter {
   if (process.env.OPENAI_API_KEY) return createOpenAIAdapter(opts);
   if (process.env.ANTHROPIC_API_KEY) return createAnthropicAdapter(opts);
   if (process.env.OPENROUTER_API_KEY) return createOpenRouterAdapter(opts);
+  if (process.env.XAI_API_KEY) return createXAIAdapter(opts);
 
   console.error("\n  No API key found. Set one of these environment variables:\n");
   console.error("    export GEMINI_API_KEY=...      # Google AI Studio (free)");
   console.error("    export OPENAI_API_KEY=...      # OpenAI");
   console.error("    export ANTHROPIC_API_KEY=...   # Anthropic Claude");
-  console.error("    export OPENROUTER_API_KEY=...  # OpenRouter (any model)\n");
+  console.error("    export OPENROUTER_API_KEY=...  # OpenRouter (any model)");
+  console.error("    export XAI_API_KEY=...         # xAI Grok\n");
   console.error("  Or specify a provider: npm run chat -- gemini");
   console.error("  With model override:   npm run chat -- gemini gemini-2.5-flash\n");
   process.exit(1);
