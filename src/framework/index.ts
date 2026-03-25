@@ -58,6 +58,10 @@ export type { Thread, Fact, ConversationMemory, FactMemory } from "./memory.js";
 export { pipe, toolStep, llmStep } from "./workflows.js";
 export type { Step, Workflow } from "./workflows.js";
 
+// RAG (Retrieval-Augmented Generation)
+export { createRAG } from "./rag.js";
+export type { RAG, RAGOptions, RAGDocument, RAGChunk, RAGSearchResult } from "./rag.js";
+
 // Agents
 export { defineAgent, runCrew } from "./agents.js";
 export type { AgentDefinition, Agent, AgentResult, CrewOptions, CrewResult } from "./agents.js";
