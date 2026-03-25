@@ -20,6 +20,7 @@ export function createXAIAdapter(config?: Partial<AdapterConfig>): AIAdapter {
   }
 
   const model = config?.model ?? "grok-4.20-0309-reasoning";
+  const systemPrompt = config?.systemPrompt ?? "You are a helpful assistant with access to tools. Use tools when they're relevant.";
   let previousResponseId: string | undefined;
 
   return {
@@ -69,7 +70,7 @@ export function createXAIAdapter(config?: Partial<AdapterConfig>): AIAdapter {
         // xAI doesn't allow instructions + previous_response_id together
         body.previous_response_id = previousResponseId;
       } else {
-        body.instructions = "You are a helpful assistant with access to tools. Use tools when they're relevant.";
+        body.instructions = systemPrompt;
       }
 
       const response = await fetch("https://api.x.ai/v1/responses", {

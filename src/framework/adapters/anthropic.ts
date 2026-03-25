@@ -17,6 +17,7 @@ export function createAnthropicAdapter(config?: Partial<AdapterConfig>): AIAdapt
   }
 
   const model = config?.model ?? "claude-sonnet-4-6";
+  const systemPrompt = config?.systemPrompt ?? "You are a helpful assistant with access to tools. Use tools when they're relevant.";
 
   return {
     name: config?.name ?? "Claude",
@@ -65,7 +66,7 @@ export function createAnthropicAdapter(config?: Partial<AdapterConfig>): AIAdapt
       const body = {
         model,
         max_tokens: 2048,
-        system: "You are a helpful assistant with access to tools. Use tools when they're relevant.",
+        system: systemPrompt,
         messages: anthropicMessages,
         tools: registry.toAnthropicFormat(),
       };

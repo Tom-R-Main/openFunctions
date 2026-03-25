@@ -42,6 +42,10 @@ export { ToolRegistry, registry } from "./registry.js";
 export { startServer } from "./server.js";
 export type { ServerOptions } from "./server.js";
 
+// System prompts
+export { composePrompt, autoToolGuide, loadPromptPreset, resolvePrompt, listPresets } from "./prompts.js";
+export type { PromptOptions } from "./prompts.js";
+
 // Test runner
 export { runTests } from "./test-runner.js";
 

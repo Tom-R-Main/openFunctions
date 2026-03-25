@@ -17,6 +17,7 @@ export function createGeminiAdapter(config?: Partial<AdapterConfig>): AIAdapter 
   }
 
   const model = config?.model ?? process.env.GEMINI_MODEL ?? "gemini-3-flash-preview";
+  const systemPrompt = config?.systemPrompt ?? "You are a helpful assistant with access to tools. Use tools when they're relevant.";
   const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
 
   return {
@@ -47,9 +48,7 @@ export function createGeminiAdapter(config?: Partial<AdapterConfig>): AIAdapter 
         tools: [{ functionDeclarations: registry.toGeminiFormat() }],
         generationConfig: { temperature: 0.7, maxOutputTokens: 2048 },
         systemInstruction: {
-          parts: [{
-            text: "You are a helpful assistant with access to tools. Use tools when they're relevant.",
-          }],
+          parts: [{ text: systemPrompt }],
         },
       };
 

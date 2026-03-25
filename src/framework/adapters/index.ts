@@ -16,3 +16,13 @@ export { createOpenAIAdapter, createOpenRouterAdapter } from "./openai.js";
 export { createAnthropicAdapter } from "./anthropic.js";
 export { createXAIAdapter } from "./xai.js";
 export { startChat } from "./chat.js";
+
+// Re-export prompt utilities for convenience
+export {
+  composePrompt,
+  autoToolGuide,
+  loadPromptPreset,
+  resolvePrompt,
+  listPresets,
+} from "../prompts.js";
+export type { PromptOptions } from "../prompts.js";

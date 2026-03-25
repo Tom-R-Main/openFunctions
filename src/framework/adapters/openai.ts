@@ -21,6 +21,7 @@ export function createOpenAIAdapter(config?: Partial<AdapterConfig>): AIAdapter 
   }
 
   const model = config?.model ?? "gpt-5.4";
+  const systemPrompt = config?.systemPrompt ?? "You are a helpful assistant with access to tools. Use tools when they're relevant.";
   let previousResponseId: string | undefined;
 
   return {
@@ -63,6 +64,8 @@ export function createOpenAIAdapter(config?: Partial<AdapterConfig>): AIAdapter 
 
       if (previousResponseId) {
         body.previous_response_id = previousResponseId;
+      } else {
+        body.instructions = systemPrompt;
       }
 
       const response = await fetch("https://api.openai.com/v1/responses", {
@@ -111,14 +114,16 @@ interface ChatCompletionsConfig {
   model: string;
   apiKey: string;
   baseUrl: string;
+  systemPrompt?: string;
 }
 
 /**
  * Generic adapter for any OpenAI-compatible Chat Completions API.
- * Used by OpenRouter, xAI, and any other compatible provider.
+ * Used by OpenRouter and any other compatible provider.
  */
 function createChatCompletionsAdapter(config: ChatCompletionsConfig): AIAdapter {
   const { name, model, apiKey, baseUrl } = config;
+  const sysPrompt = config.systemPrompt ?? "You are a helpful assistant with access to tools. Use tools when they're relevant.";
 
   return {
     name,
@@ -127,7 +132,7 @@ function createChatCompletionsAdapter(config: ChatCompletionsConfig): AIAdapter 
     async chat(messages: ChatMessage[], registry: ToolRegistry): Promise<AdapterResponse> {
       const openaiMessages: any[] = [{
         role: "system",
-        content: "You are a helpful assistant with access to tools. Use tools when they're relevant.",
+        content: sysPrompt,
       }];
 
       for (const msg of messages) {
@@ -222,6 +227,7 @@ export function createOpenRouterAdapter(config?: Partial<AdapterConfig>): AIAdap
     model: config?.model ?? "google/gemini-3-flash-preview",
     apiKey,
     baseUrl: "https://openrouter.ai/api/v1",
+    systemPrompt: config?.systemPrompt,
   });
 }
 

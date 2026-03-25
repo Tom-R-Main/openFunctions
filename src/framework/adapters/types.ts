@@ -38,6 +38,9 @@ export interface AdapterConfig {
 
   /** API key */
   apiKey: string;
+
+  /** Custom system prompt (overrides the default) */
+  systemPrompt?: string;
 }
 
 /** An AI provider adapter */

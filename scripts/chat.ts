@@ -5,11 +5,11 @@
  * Chat with any AI provider using your tools.
  *
  * Usage:
- *   npm run chat                # auto-detect from API keys
- *   npm run chat -- gemini      # Google AI Studio (GEMINI_API_KEY)
- *   npm run chat -- openai      # OpenAI Responses API (OPENAI_API_KEY)
- *   npm run chat -- anthropic   # Anthropic Claude (ANTHROPIC_API_KEY)
- *   npm run chat -- openrouter  # OpenRouter (OPENROUTER_API_KEY)
+ *   npm run chat                                    # auto-detect provider + default prompt
+ *   npm run chat -- gemini                          # specific provider
+ *   npm run chat -- gemini gemini-2.5-flash         # specific model
+ *   npm run chat -- gemini --prompt study-buddy     # preset prompt
+ *   npm run chat -- gemini --prompt "You are X"     # inline prompt
  */
 
 import { registry } from "../src/framework/index.js";
@@ -20,6 +20,8 @@ import {
   createAnthropicAdapter,
   createXAIAdapter,
   startChat,
+  resolvePrompt,
+  listPresets,
 } from "../src/framework/adapters/index.js";
 import type { AIAdapter } from "../src/framework/adapters/index.js";
 
@@ -48,11 +50,32 @@ registry.registerAll(myTools);
 
 // ── Select adapter ────────────────────────────────────────────────────────
 
-const provider = process.argv[2]?.toLowerCase();
-const modelOverride = process.argv[3]; // Optional: npm run chat -- gemini gemini-2.5-flash
+// ── Parse arguments ──────────────────────────────────────────────────────
+// Supports: npm run chat -- [provider] [model] [--prompt name-or-string]
+
+const args = process.argv.slice(2);
+let provider: string | undefined;
+let modelOverride: string | undefined;
+let promptInput: string | undefined;
+
+for (let i = 0; i < args.length; i++) {
+  if (args[i] === "--prompt" || args[i] === "-p") {
+    promptInput = args[i + 1];
+    i++; // skip the value
+  } else if (!provider) {
+    provider = args[i].toLowerCase();
+  } else if (!modelOverride) {
+    modelOverride = args[i];
+  }
+}
+
+// Resolve system prompt (preset name, inline string, or default)
+const systemPrompt = resolvePrompt(promptInput, registry);
 
 function createAdapter(): AIAdapter {
-  const opts = modelOverride ? { model: modelOverride } : undefined;
+  const opts: Record<string, string> = {};
+  if (modelOverride) opts.model = modelOverride;
+  opts.systemPrompt = systemPrompt;
 
   // Explicit provider selection
   if (provider) {
@@ -72,11 +95,11 @@ function createAdapter(): AIAdapter {
       default:
         console.error(`\n  Unknown provider: "${provider}"`);
         console.error("  Available: gemini, openai, anthropic, openrouter, xai\n");
-        console.error("  Optional model override:");
+        console.error("  Options:");
         console.error("    npm run chat -- gemini gemini-2.5-flash");
-        console.error("    npm run chat -- openai gpt-5.4-pro");
-        console.error("    npm run chat -- xai grok-3");
-        console.error("    npm run chat -- openrouter anthropic/claude-sonnet-4-6\n");
+        console.error("    npm run chat -- gemini --prompt study-buddy");
+        console.error(`    npm run chat -- gemini --prompt "You are a pirate"`);
+        console.error(`\n  Available presets: ${listPresets().join(", ") || "(none)"}\n`);
         process.exit(1);
     }
   }
@@ -95,7 +118,12 @@ function createAdapter(): AIAdapter {
   console.error("    export OPENROUTER_API_KEY=...  # OpenRouter (any model)");
   console.error("    export XAI_API_KEY=...         # xAI Grok\n");
   console.error("  Or specify a provider: npm run chat -- gemini");
-  console.error("  With model override:   npm run chat -- gemini gemini-2.5-flash\n");
+  console.error("  With model override:   npm run chat -- gemini gemini-2.5-flash");
+  console.error("  With custom prompt:    npm run chat -- gemini --prompt study-buddy\n");
+  const presets = listPresets();
+  if (presets.length > 0) {
+    console.error(`  Available presets: ${presets.join(", ")}\n`);
+  }
   process.exit(1);
 }
 
