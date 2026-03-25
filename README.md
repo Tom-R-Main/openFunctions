@@ -142,15 +142,16 @@ Tiers 1 and 2 share the same `Store` interface: `get()`, `set()`, `delete()`, `g
 
 ## AI Providers
 
-Chat with any provider using your tools:
+Chat with any provider using your tools. Set your API keys in a `.env` file (never committed to git):
 
 ```bash
-export GEMINI_API_KEY=...       # Google AI Studio (free) — https://aistudio.google.com/apikey
-export OPENAI_API_KEY=...       # OpenAI — https://platform.openai.com/api-keys
-export ANTHROPIC_API_KEY=...    # Anthropic — https://console.anthropic.com/settings/keys
-export XAI_API_KEY=...          # xAI Grok — https://console.x.ai
-export OPENROUTER_API_KEY=...   # OpenRouter — https://openrouter.ai/keys
+cp .env.example .env
+# Edit .env and add your key(s) — you only need ONE to get started
+```
 
+Then chat:
+
+```bash
 npm run chat                    # auto-detects from whichever key is set
 ```
 
