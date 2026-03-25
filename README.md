@@ -1,6 +1,19 @@
-# openFunctions
+<p align="center">
+  <img src="assets/logo.svg" alt="openFunctions" width="600">
+</p>
 
-**Build AI agent tools in minutes.** Define once, use with any AI.
+<p align="center">
+  <strong>Build AI agent tools in minutes.</strong> Define once, use with any AI.
+</p>
+
+<p align="center">
+  <a href="#quick-start">Quick Start</a> &middot;
+  <a href="#build-your-own-tools">Build Tools</a> &middot;
+  <a href="#ai-providers">AI Providers</a> &middot;
+  <a href="#example-domains-26-tools">Examples</a>
+</p>
+
+---
 
 openFunctions is a TypeScript framework for building [MCP](https://modelcontextprotocol.io) (Model Context Protocol) servers — the open standard for giving AI agents tools to call. Your tools work with Claude, Gemini, ChatGPT, and any MCP-compatible client, with zero rewriting.
 
