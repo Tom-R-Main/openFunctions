@@ -15,7 +15,7 @@
 
 ---
 
-openFunctions is a TypeScript framework for building [MCP](https://modelcontextprotocol.io) (Model Context Protocol) servers — the open standard for giving AI agents tools to call. Your tools work with Claude, Gemini, ChatGPT, and any MCP-compatible client, with zero rewriting.
+openFunctions is a TypeScript framework for building [MCP](https://modelcontextprotocol.io) (Model Context Protocol) servers — the open standard for giving AI agents tools to call. Your tools work with Claude, Gemini, ChatGPT, Grok, and any MCP-compatible client, with zero rewriting.
 
 ```
 ┌─────────────────────────────────────────────────────────┐
@@ -24,9 +24,9 @@ openFunctions is a TypeScript framework for building [MCP](https://modelcontextp
 └──────┬──────────┬──────────┬──────────┬────────────────┘
        │          │          │          │
   ┌────▼────┐ ┌──▼───┐ ┌───▼───┐ ┌───▼────────┐
-  │ Claude  │ │Gemini│ │ChatGPT│ │ OpenRouter  │
-  │  (MCP)  │ │      │ │       │ │ (any model) │
-  └─────────┘ └──────┘ └───────┘ └────────────┘
+  │ Claude  │ │Gemini│ │ChatGPT│ │ Grok │ │ OpenRouter  │
+  │  (MCP)  │ │      │ │       │ │      │ │ (any model) │
+  └─────────┘ └──────┘ └───────┘ └──────┘ └────────────┘
 ```
 
 ## Quick Start
@@ -49,6 +49,7 @@ npm run chat                # Chat with AI using your tools (auto-detects API ke
 npm run chat -- gemini      # Chat with Gemini specifically
 npm run chat -- openai      # Chat with OpenAI (GPT-5.4)
 npm run chat -- anthropic   # Chat with Claude (Sonnet 4.6)
+npm run chat -- xai         # Chat with Grok (4.2)
 npm run chat -- openrouter  # Chat via OpenRouter (any model)
 npm run create-tool <name>  # Scaffold a new tool with tests
 npm run docs                # Generate markdown reference of all tools
@@ -146,6 +147,7 @@ Chat with any provider using your tools:
 export GEMINI_API_KEY=...       # Google AI Studio (free) — https://aistudio.google.com/apikey
 export OPENAI_API_KEY=...       # OpenAI — https://platform.openai.com/api-keys
 export ANTHROPIC_API_KEY=...    # Anthropic — https://console.anthropic.com/settings/keys
+export XAI_API_KEY=...          # xAI Grok — https://console.x.ai
 export OPENROUTER_API_KEY=...   # OpenRouter — https://openrouter.ai/keys
 
 npm run chat                    # auto-detects from whichever key is set
@@ -156,6 +158,7 @@ npm run chat                    # auto-detects from whichever key is set
 | Gemini | `gemini-3-flash-preview` | Function calling |
 | OpenAI | `gpt-5.4` | Responses API |
 | Anthropic | `claude-sonnet-4-6` | Messages API + tool_use |
+| xAI | `grok-4.20-0309-reasoning` | Responses API |
 | OpenRouter | `google/gemini-3-flash-preview` | OpenAI-compatible |
 
 Override the model with environment variables: `GEMINI_MODEL`, or pass config to the adapter.
@@ -198,6 +201,7 @@ openFunctions/
 │   │   │   ├── gemini.ts       # Google AI Studio
 │   │   │   ├── openai.ts       # OpenAI Responses API + OpenRouter
 │   │   │   ├── anthropic.ts    # Anthropic Claude
+│   │   │   ├── xai.ts          # xAI Grok
 │   │   │   └── chat.ts         # Shared interactive chat loop
 │   │   └── types.ts            # TypeScript interfaces
 │   ├── examples/               # 9 domains, 26 tools — read these to learn
@@ -233,7 +237,7 @@ openFunctions is built on three concepts:
 
 **1. Tools** — Functions an AI can call. Each tool has a name, description (the AI reads this to decide when to use it), a JSON Schema for parameters, and a handler function. Parameters are validated automatically before the handler runs.
 
-**2. Registry** — Manages all your tools and converts them to the format each AI provider expects. Define once, use with Claude (MCP), Gemini (function calling), OpenAI (Responses API), or any OpenAI-compatible provider like OpenRouter.
+**2. Registry** — Manages all your tools and converts them to the format each AI provider expects. Define once, use with Claude (MCP), Gemini (function calling), OpenAI (Responses API), xAI Grok, or any OpenAI-compatible provider like OpenRouter.
 
 **3. MCP Server** — Exposes your tools over the [Model Context Protocol](https://modelcontextprotocol.io), the open standard for AI tool interoperability. Any MCP client (Claude Desktop, Cursor, Claude.ai, etc.) can discover and call your tools.
 
@@ -241,7 +245,7 @@ openFunctions is built on three concepts:
 
 This framework is derived from [ExecuFunction](https://execufunction.com)'s production tool system, which powers ~150 AI-callable tools across task management, calendar, knowledge, code search, and more. openFunctions extracts the core pattern and strips away the production complexity (auth, RLS, activity events, billing) so you can focus on building tools.
 
-The key insight: **the AI model is interchangeable, but the tool layer is what makes agents actually useful.** openFunctions proves this by making the same tool definitions work across Claude, Gemini, ChatGPT, OpenRouter, and any MCP client.
+The key insight: **the AI model is interchangeable, but the tool layer is what makes agents actually useful.** openFunctions proves this by making the same tool definitions work across Claude, Gemini, ChatGPT, Grok, OpenRouter, and any MCP client.
 
 ## License
 
