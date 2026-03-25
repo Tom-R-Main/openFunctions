@@ -17,6 +17,7 @@ import type {
   AnthropicTool,
   OpenAIFunction,
 } from "./types.js";
+import { validateParams, formatValidationErrors } from "./validate.js";
 
 export class ToolRegistry {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -73,6 +74,14 @@ export class ToolRegistry {
     const tool = this.tools.get(name);
     if (!tool) {
       return { success: false, error: `Unknown tool: "${name}"` };
+    }
+
+    // ── Validate parameters against schema ────────────────────────────────
+    const validationErrors = validateParams(params, tool.inputSchema);
+    if (validationErrors.length > 0) {
+      const message = formatValidationErrors(name, validationErrors);
+      console.error(`\n⚠️  ${message}\n`);
+      return { success: false, error: message };
     }
 
     const start = Date.now();
