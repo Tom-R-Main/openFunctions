@@ -13,6 +13,8 @@
     "test-tools": "tsx test-client/cli.ts",
     "gemini": "tsx gemini-bridge/test-with-gemini.ts",
     "test": "tsx test-client/run-tests.ts",
+    "create-tool": "tsx scripts/create-tool.ts",
+    "docs": "tsx scripts/generate-docs.ts",
     "inspect": "npx @modelcontextprotocol/inspector tsx src/index.ts"
   },
   "dependencies": {

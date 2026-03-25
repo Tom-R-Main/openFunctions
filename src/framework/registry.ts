@@ -85,7 +85,42 @@ export class ToolRegistry {
       const duration = Date.now() - start;
       const message =
         error instanceof Error ? error.message : "Unknown error";
-      console.error(`❌ ${name} failed after ${duration}ms: ${message}`);
+      const stack =
+        error instanceof Error ? error.stack?.split("\n")[1]?.trim() : "";
+
+      // ── Rich error output ──────────────────────────────────────────────
+      console.error(`\n❌ ${name} failed after ${duration}ms`);
+      console.error(`   Error: ${message}`);
+      console.error(`   Input: ${JSON.stringify(params)}`);
+      if (stack) {
+        console.error(`   At:    ${stack}`);
+      }
+
+      // Provide hints for common mistakes
+      const hints: string[] = [];
+      if (message.includes("Cannot read properties of undefined")) {
+        hints.push(
+          "A parameter might be missing — check that required fields are provided"
+        );
+      }
+      if (message.includes("is not a function")) {
+        hints.push(
+          "Check that you're importing the right modules and calling functions correctly"
+        );
+      }
+      if (message.includes("fetch") || message.includes("ECONNREFUSED")) {
+        hints.push(
+          "Network request failed — check the URL and your internet connection"
+        );
+      }
+      if (message.includes("ENOENT")) {
+        hints.push("File not found — check the file path");
+      }
+      for (const hint of hints) {
+        console.error(`   Hint:  ${hint}`);
+      }
+      console.error();
+
       return { success: false, error: message };
     }
   }
