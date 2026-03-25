@@ -46,6 +46,31 @@ export interface ToolDefinition<
 
   /** Optional examples showing how to use this tool */
   examples?: ToolExample[];
+
+  /** Optional test cases — run with `npm test` */
+  tests?: ToolTest[];
+}
+
+// ─── Tool Test ─────────────────────────────────────────────────────────────
+
+export interface ToolTest {
+  /** Short name for this test case (e.g. "creates a task") */
+  name: string;
+
+  /** Input parameters to pass to the handler */
+  input: Record<string, unknown>;
+
+  /** What to check on the result */
+  expect: {
+    /** Should the tool succeed or fail? */
+    success: boolean;
+
+    /** Optional: check that specific fields exist in result.data */
+    data?: Record<string, unknown>;
+
+    /** Optional: check that the error message contains this string */
+    errorContains?: string;
+  };
 }
 
 // ─── Tool Result ────────────────────────────────────────────────────────────

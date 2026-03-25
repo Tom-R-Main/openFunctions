@@ -12,6 +12,7 @@
     "dev": "tsx watch src/index.ts",
     "test-tools": "tsx test-client/cli.ts",
     "gemini": "tsx gemini-bridge/test-with-gemini.ts",
+    "test": "tsx test-client/run-tests.ts",
     "inspect": "npx @modelcontextprotocol/inspector tsx src/index.ts"
   },
   "dependencies": {

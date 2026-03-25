@@ -74,6 +74,18 @@ export const createTask = defineTool<CreateTaskParams>({
       },
     },
   ],
+  tests: [
+    {
+      name: "creates a task with title and subject",
+      input: { title: "Read chapter 5", subject: "Biology" },
+      expect: { success: true, data: { title: "Read chapter 5", subject: "Biology", completed: false } },
+    },
+    {
+      name: "creates a task with a due date",
+      input: { title: "Problem set 3", subject: "CS 301", due: "2026-04-01" },
+      expect: { success: true, data: { subject: "CS 301", due: "2026-04-01" } },
+    },
+  ],
   handler: async ({ title, subject, due }) => {
     const id = String(nextId++);
     const task: Task = {
@@ -108,6 +120,13 @@ export const listTasks = defineTool<ListTasksParams>({
     },
   },
   tags: ["productivity", "study"],
+  tests: [
+    {
+      name: "lists all tasks",
+      input: {},
+      expect: { success: true },
+    },
+  ],
   handler: async ({ subject, completed }) => {
     let result = tasks.getAll();
 
@@ -142,6 +161,13 @@ export const completeTask = defineTool<CompleteTaskParams>({
     required: ["id"],
   },
   tags: ["productivity", "study"],
+  tests: [
+    {
+      name: "fails with nonexistent ID",
+      input: { id: "nonexistent" },
+      expect: { success: false, errorContains: "No task found" },
+    },
+  ],
   handler: async ({ id }) => {
     const task = tasks.get(id);
     if (!task) {

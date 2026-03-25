@@ -42,11 +42,15 @@ export { ToolRegistry, registry } from "./registry.js";
 export { startServer } from "./server.js";
 export type { ServerOptions } from "./server.js";
 
+// Test runner
+export { runTests } from "./test-runner.js";
+
 // Types (for students who want TypeScript help)
 export type {
   ToolDefinition,
   ToolResult,
   ToolExample,
+  ToolTest,
   InputSchema,
   JsonSchemaProperty,
   GeminiFunctionDeclaration,

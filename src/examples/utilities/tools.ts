@@ -160,14 +160,21 @@ export const calculate = defineTool<CalculateParams>({
     required: ["a", "b", "operator"],
   },
   tags: ["utility", "math"],
-  examples: [
+  tests: [
     {
-      description: "Add two numbers",
+      name: "adds two numbers",
       input: { a: 5, b: 3, operator: "add" },
-      output: {
-        success: true,
-        data: { expression: "5 + 3", result: 8 },
-      },
+      expect: { success: true, data: { expression: "5 + 3", result: 8 } },
+    },
+    {
+      name: "multiplies two numbers",
+      input: { a: 7, b: 6, operator: "multiply" },
+      expect: { success: true, data: { result: 42 } },
+    },
+    {
+      name: "rejects division by zero",
+      input: { a: 10, b: 0, operator: "divide" },
+      expect: { success: false, errorContains: "Division by zero" },
     },
   ],
   handler: async ({ a, b, operator }) => {
@@ -214,20 +221,21 @@ export const convertUnits = defineTool<ConvertUnitsParams>({
     required: ["value", "from_unit", "to_unit"],
   },
   tags: ["utility", "conversion"],
-  examples: [
+  tests: [
     {
-      description: "Convert kilometers to miles",
-      input: { value: 10, from_unit: "km", to_unit: "mi" },
-      output: {
-        success: true,
-        data: {
-          value: 10,
-          from_unit: "km",
-          to_unit: "mi",
-          result: 6.2137,
-          formula: "km * 0.621371",
-        },
-      },
+      name: "converts km to mi",
+      input: { value: 100, from_unit: "km", to_unit: "mi" },
+      expect: { success: true, data: { result: 62.1371 } },
+    },
+    {
+      name: "converts C to F",
+      input: { value: 0, from_unit: "C", to_unit: "F" },
+      expect: { success: true, data: { result: 32 } },
+    },
+    {
+      name: "rejects unsupported conversion",
+      input: { value: 5, from_unit: "km", to_unit: "lb" },
+      expect: { success: false },
     },
   ],
   handler: async ({ value, from_unit, to_unit }) => {
@@ -276,14 +284,21 @@ export const formatDate = defineTool<FormatDateParams>({
     required: ["date", "format"],
   },
   tags: ["utility", "date"],
-  examples: [
+  tests: [
     {
-      description: "Format a date as long form",
+      name: "formats as long date",
       input: { date: "2026-03-24", format: "long" },
-      output: {
-        success: true,
-        data: { input: "2026-03-24", format: "long", result: "March 24, 2026" },
-      },
+      expect: { success: true, data: { result: "March 24, 2026" } },
+    },
+    {
+      name: "formats as ISO",
+      input: { date: "3/24/2026", format: "iso" },
+      expect: { success: true, data: { result: "2026-03-24" } },
+    },
+    {
+      name: "rejects invalid date",
+      input: { date: "not-a-date", format: "iso" },
+      expect: { success: false, errorContains: "parse" },
     },
   ],
   handler: async ({ date, format }) => {
