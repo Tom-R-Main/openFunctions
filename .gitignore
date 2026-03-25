@@ -8,3 +8,8 @@ dist/
 !.env.example
 .DS_Store
 .data/
+
+# OpenMemory - IDE/Assistant specific rules
+.windsurf/rules/openmemory.md
+CLAUDE.md
+AGENTS.md
