@@ -65,7 +65,7 @@ export function createOpenAIAdapter(config?: Partial<AdapterConfig>): AIAdapter 
       if (previousResponseId) {
         body.previous_response_id = previousResponseId;
       } else {
-        body.instructions = systemPrompt;
+        body.instructions = options?.systemPrompt ?? systemPrompt;
       }
 
       // Tool choice support
@@ -139,7 +139,7 @@ function createChatCompletionsAdapter(config: ChatCompletionsConfig): AIAdapter 
     async chat(messages: ChatMessage[], registry: ToolRegistry, options?: ChatOptions): Promise<AdapterResponse> {
       const openaiMessages: any[] = [{
         role: "system",
-        content: sysPrompt,
+        content: options?.systemPrompt ?? sysPrompt,
       }];
 
       for (const msg of messages) {

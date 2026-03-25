@@ -70,7 +70,7 @@ export function createXAIAdapter(config?: Partial<AdapterConfig>): AIAdapter {
         // xAI doesn't allow instructions + previous_response_id together
         body.previous_response_id = previousResponseId;
       } else {
-        body.instructions = systemPrompt;
+        body.instructions = options?.systemPrompt ?? systemPrompt;
       }
 
       // Tool choice support

@@ -47,6 +47,8 @@ export interface AdapterConfig {
 export interface ChatOptions {
   /** Control tool calling: "auto" (default), "required" (must call a tool), or specific tool name */
   toolChoice?: "auto" | "required" | { name: string };
+  /** Override the system prompt for this specific call (used by agents) */
+  systemPrompt?: string;
 }
 
 /** An AI provider adapter */

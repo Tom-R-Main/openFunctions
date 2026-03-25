@@ -66,7 +66,7 @@ export function createAnthropicAdapter(config?: Partial<AdapterConfig>): AIAdapt
       const body: Record<string, unknown> = {
         model,
         max_tokens: 2048,
-        system: systemPrompt,
+        system: options?.systemPrompt ?? systemPrompt,
         messages: anthropicMessages,
         tools: registry.toAnthropicFormat(),
       };

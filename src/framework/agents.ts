@@ -143,15 +143,10 @@ export function defineAgent(definition: AgentDefinition): Agent {
       while (rounds < maxRounds) {
         rounds++;
 
-        // Create a temporary adapter config with the system prompt
         const response = await adapter.chat(
-          [
-            // Inject system prompt as first user context if no native support
-            ...(rounds === 1 ? [{ role: "user" as const, content: `[System: ${systemPrompt}]\n\n${task}` }] : messages.slice(1)),
-          ].length > 0
-            ? messages
-            : messages,
+          messages,
           agentRegistry,
+          { systemPrompt },
         );
 
         if (response.toolCall) {

@@ -48,7 +48,7 @@ export function createGeminiAdapter(config?: Partial<AdapterConfig>): AIAdapter 
         tools: [{ functionDeclarations: registry.toGeminiFormat() }],
         generationConfig: { temperature: 0.7, maxOutputTokens: 2048 },
         systemInstruction: {
-          parts: [{ text: systemPrompt }],
+          parts: [{ text: options?.systemPrompt ?? systemPrompt }],
         },
       };
 

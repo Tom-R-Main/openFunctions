@@ -276,21 +276,38 @@ export async function createRAG(options: RAGOptions): Promise<RAG> {
       createdAt: new Date().toISOString(),
     };
 
-    await pool.query(
-      `INSERT INTO ${docsTable} (id, content, metadata) VALUES ($1, $2, $3::jsonb)`,
-      [id, content, metadata ? JSON.stringify(metadata) : null],
-    );
-
+    // Generate all embeddings before touching the database
     const chunks = chunkText(content, chunkSize, chunkOverlap);
-    for (let i = 0; i < chunks.length; i++) {
-      const chunkId = `${id}-${i}`;
-      const embedding = await embed(chunks[i], "RETRIEVAL_DOCUMENT");
+    const embeddings: number[][] = [];
+    for (const chunk of chunks) {
+      embeddings.push(await embed(chunk, "RETRIEVAL_DOCUMENT"));
+    }
 
-      await pool.query(
-        `INSERT INTO ${chunksTable} (id, document_id, chunk_index, content, embedding)
-         VALUES ($1, $2, $3, $4, $5::vector)`,
-        [chunkId, id, i, chunks[i], toPgVector(embedding)],
+    // Transactional write — all or nothing
+    const client = await pool.connect();
+    try {
+      await client.query("BEGIN");
+
+      await client.query(
+        `INSERT INTO ${docsTable} (id, content, metadata) VALUES ($1, $2, $3::jsonb)`,
+        [id, content, metadata ? JSON.stringify(metadata) : null],
       );
+
+      for (let i = 0; i < chunks.length; i++) {
+        await client.query(
+          `INSERT INTO ${chunksTable} (id, document_id, chunk_index, content, embedding)
+           VALUES ($1, $2, $3, $4, $5::vector)`,
+          [`${id}-${i}`, id, i, chunks[i], toPgVector(embeddings[i])],
+        );
+      }
+
+      await client.query("COMMIT");
+    } catch (e) {
+      await client.query("ROLLBACK");
+      nextDocId--; // Reclaim the ID
+      throw e;
+    } finally {
+      client.release();
     }
 
     console.log(`📄 Added document "${id}" (${chunks.length} chunk${chunks.length === 1 ? "" : "s"})`);
