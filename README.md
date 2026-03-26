@@ -16,6 +16,12 @@
   <a href="#docs">Docs</a>
 </p>
 
+<p align="center">
+  <sub>
+    <a href="docs/i18n/README.ar.md">العربية</a> · <a href="docs/i18n/README.bn.md">বাংলা</a> · <a href="docs/i18n/README.de.md">Deutsch</a> · <a href="docs/i18n/README.es.md">Español</a> · <a href="docs/i18n/README.fr.md">Français</a> · <a href="docs/i18n/README.hi.md">हिन्दी</a> · <a href="docs/i18n/README.id.md">Indonesia</a> · <a href="docs/i18n/README.ja.md">日本語</a> · <a href="docs/i18n/README.ko.md">한국어</a> · <a href="docs/i18n/README.nl.md">Nederlands</a> · <a href="docs/i18n/README.pa.md">ਪੰਜਾਬੀ</a> · <a href="docs/i18n/README.pl.md">Polski</a> · <a href="docs/i18n/README.pt-BR.md">Português</a> · <a href="docs/i18n/README.ru.md">Русский</a> · <a href="docs/i18n/README.sv.md">Svenska</a> · <a href="docs/i18n/README.te.md">తెలుగు</a> · <a href="docs/i18n/README.th.md">ไทย</a> · <a href="docs/i18n/README.tr.md">Türkçe</a> · <a href="docs/i18n/README.uk.md">Українська</a> · <a href="docs/i18n/README.yue.md">粵語</a> · <a href="docs/i18n/README.zh-CN.md">简体中文</a> · <a href="docs/i18n/README.zh-TW.md">繁體中文</a>
+  </sub>
+</p>
+
 ---
 
 openFunctions is an MIT-licensed TypeScript framework for building AI-callable tools and exposing them through [MCP](https://modelcontextprotocol.io), chat adapters, workflows, and agents. Its core runtime is simple:
