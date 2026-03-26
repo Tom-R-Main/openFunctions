@@ -1,7 +1,7 @@
 [English](../README.md) | [Bengali](README.bn.md)
 
 <p align="center">
-  <img src="assets/logo.svg" alt="openFunctions" width="600">
+  <img src="../../assets/logo.svg" alt="openFunctions" width="600">
 </p>
 
 <p align="center">
