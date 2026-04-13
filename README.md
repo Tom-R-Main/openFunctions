@@ -260,6 +260,31 @@ The registry validates parameters before handlers run, so schema errors are surf
 - [Architecture](docs/ARCHITECTURE.md): the runtime model, filtered registries, synthetic tools, and execution paths
 - [RAG](docs/RAG.md): semantic chunking, Gemini/OpenAI embeddings, pgvector schema, HNSW search, and tool integration
 
+## Plugins
+
+### ExecuFunction for OpenClaw
+
+The [`@openfunctions/openclaw-execufunction`](plugins/openclaw-execufunction/) plugin brings [ExecuFunction](https://execufunction.com) into the [OpenClaw](https://github.com/openclaw/openclaw) agent ecosystem — 17 tools across 6 domains:
+
+| Domain | Tools | What it does |
+|--------|-------|--------------|
+| Tasks | `exf_tasks_list`, `exf_tasks_create`, `exf_tasks_update`, `exf_tasks_complete` | Structured task management with priorities (do_now/do_next/do_later/delegate/drop) |
+| Calendar | `exf_calendar_list`, `exf_calendar_create`, `exf_calendar_update` | Event scheduling and lookup |
+| Knowledge | `exf_notes_search`, `exf_notes_create`, `exf_notes_get` | Semantic search across a knowledge base |
+| Projects | `exf_projects_list`, `exf_projects_context` | Project status and full context (tasks, notes, signals) |
+| People/CRM | `exf_people_search`, `exf_person_create`, `exf_org_search` | Contact and organization management |
+| Codebase | `exf_codebase_search`, `exf_code_who_knows` | Semantic code search and expertise tracking |
+
+Install:
+
+```bash
+openclaw plugins install @openfunctions/openclaw-execufunction
+```
+
+Set `EXF_PAT` in your environment (or configure via OpenClaw plugin settings), and your OpenClaw agent gets persistent tasks, calendar awareness, semantic knowledge search, CRM, and code intelligence — backed by ExecuFunction's cloud API.
+
+See the [plugin README](plugins/openclaw-execufunction/) for details.
+
 ## Project Structure
 
 ```text
@@ -269,6 +294,8 @@ openFunctions/
 │   ├── examples/               # Reference tool patterns
 │   ├── my-tools/               # Your tools
 │   └── index.ts                # MCP entrypoint
+├── plugins/
+│   └── openclaw-execufunction/ # ExecuFunction plugin for OpenClaw
 ├── docs/                       # Architecture docs
 ├── scripts/                    # chat, create-tool, docs
 ├── test-client/                # CLI tester + test runner

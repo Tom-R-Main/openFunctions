@@ -1,0 +1,58 @@
+{
+  "id": "execufunction",
+  "providerAuthEnvVars": {
+    "execufunction": ["EXF_PAT"]
+  },
+  "uiHints": {
+    "apiUrl": {
+      "label": "ExecuFunction API URL",
+      "help": "Base URL for the ExecuFunction API (default: https://execufunction.com)."
+    },
+    "token": {
+      "label": "Personal Access Token",
+      "help": "ExecuFunction PAT. Generate one at Settings > API Tokens. Fallback: EXF_PAT env var.",
+      "sensitive": true,
+      "placeholder": "exf_pat_..."
+    },
+    "workspaceId": {
+      "label": "Workspace ID",
+      "help": "Optional workspace ID for multi-workspace accounts."
+    }
+  },
+  "contracts": {
+    "tools": [
+      "exf_tasks_list",
+      "exf_tasks_create",
+      "exf_tasks_update",
+      "exf_tasks_complete",
+      "exf_calendar_list",
+      "exf_calendar_create",
+      "exf_calendar_update",
+      "exf_notes_search",
+      "exf_notes_create",
+      "exf_notes_get",
+      "exf_projects_list",
+      "exf_projects_context",
+      "exf_people_search",
+      "exf_person_create",
+      "exf_org_search",
+      "exf_codebase_search",
+      "exf_code_who_knows"
+    ]
+  },
+  "configSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+      "apiUrl": {
+        "type": "string"
+      },
+      "token": {
+        "type": ["string", "object"]
+      },
+      "workspaceId": {
+        "type": "string"
+      }
+    }
+  }
+}

@@ -1,0 +1,35 @@
+{
+  "name": "@openfunctions/openclaw-execufunction",
+  "version": "0.1.0",
+  "description": "ExecuFunction plugin for OpenClaw — tasks, calendar, knowledge, CRM, codebase, and more",
+  "type": "module",
+  "license": "MIT",
+  "keywords": [
+    "openclaw",
+    "openclaw-plugin",
+    "execufunction",
+    "tasks",
+    "calendar",
+    "knowledge",
+    "crm"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Tom-R-Main/openFunctions.git",
+    "directory": "plugins/openclaw-execufunction"
+  },
+  "files": [
+    "index.ts",
+    "src/",
+    "openclaw.plugin.json"
+  ],
+  "devDependencies": {
+    "@openclaw/plugin-sdk": "*",
+    "@sinclair/typebox": "^0.34.0"
+  },
+  "openclaw": {
+    "extensions": [
+      "./index.ts"
+    ]
+  }
+}
