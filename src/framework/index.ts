@@ -66,6 +66,15 @@ export type { RAG, RAGOptions, RAGDocument, RAGChunk, RAGSearchResult } from "./
 export { defineAgent, runCrew } from "./agents.js";
 export type { AgentDefinition, Agent, AgentResult, CrewOptions, CrewResult } from "./agents.js";
 
+// Context Providers
+export { connectProvider, contextPrompt, checkProviderHealth } from "./context.js";
+export type {
+  ContextProvider,
+  ConnectedProvider,
+  ContextProviderMetadata,
+  ContextCapability,
+} from "./context.js";
+
 // Test runner
 export { runTests } from "./test-runner.js";
 

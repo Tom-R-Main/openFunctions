@@ -1,9 +1,10 @@
 # openFunctions — AI Assistant Context
 
 ## What This Is
-A TypeScript framework for building MCP (Model Context Protocol) servers.
-Students define AI-callable tools using `defineTool()`. Tools work with
-Claude (MCP), Gemini (function calling), and OpenAI (tools API).
+A TypeScript framework for building AI-callable tools, agents, and context
+providers. Tools work with Claude (MCP), Gemini (function calling), and
+OpenAI (tools API). Context providers connect external systems (ExecuFunction,
+Obsidian, Notion) to the agent runtime.
 
 ## Architecture
 
@@ -14,9 +15,12 @@ src/
     store.ts         # createStore() — JSON file persistence
     pg-store.ts      # createPgStore() — Postgres persistence (optional)
     registry.ts      # ToolRegistry — manages tools, provider format adapters
+    context.ts       # Context provider interface — connectProvider(), contextPrompt()
     server.ts        # startServer() — MCP server wrapper
     types.ts         # TypeScript interfaces
     index.ts         # Re-exports everything
+  providers/         # Context provider implementations
+    execufunction/   # ExecuFunction reference provider (tasks, calendar, CRM, etc.)
   examples/          # Read these for patterns
     study-tracker/   # CRUD pattern (beginner)
     bookmark-manager/# Arrays + search (beginner)
@@ -116,6 +120,9 @@ All imports come from `"../framework/index.js"`:
 | `closePgPool()` | Shut down Postgres pool |
 | `registry` | Global tool registry instance |
 | `startServer(registry, opts)` | Start MCP server |
+| `connectProvider(provider, registry)` | Connect a context provider and register its tools |
+| `contextPrompt(providers[])` | Build system prompt context from connected providers |
+| `checkProviderHealth(providers[])` | Health check all connected providers |
 
 ## ESM Import Requirement
 

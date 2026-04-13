@@ -151,8 +151,61 @@ Higher-level modules can expose themselves back into the runtime as tools:
 
 - `createMemoryTools(...)`
 - `rag.createTools()`
+- `connectedProvider.createTools()`
 
-That means storage and retrieval systems do not bypass the runtime. They re-enter it.
+That means storage, retrieval, and context systems do not bypass the runtime. They re-enter it.
+
+## Context Providers
+
+A context provider connects an external system to the agent runtime. The pattern follows the same composition model as memory and RAG:
+
+```text
+ContextProvider → .connect() → ConnectedProvider → .createTools() → registry
+                                                  → .buildContext() → system prompt
+```
+
+### Provider interface
+
+A context provider has two phases:
+
+1. **Define** — a factory function returns a `ContextProvider` with cheap metadata and a `connect()` method
+2. **Connect** — `connect()` initializes auth and resources, returns a `ConnectedProvider` with tools
+
+```typescript
+const exf = await connectProvider(
+  createExecuFunctionProvider({ token: "..." }),
+  registry,
+);
+```
+
+`connectProvider()` handles tagging: all tools are automatically tagged with `"context"` and `"context:<providerId>"` so agents can filter by provider or by the general context tag.
+
+### Context prompt injection
+
+Providers can implement `buildContext()` to return a text block for system prompts:
+
+```typescript
+const context = await contextPrompt([exf, obsidian]);
+const systemPrompt = composePrompt({
+  role: "Personal assistant",
+  context,
+  toolGuide: autoToolGuide(registry),
+});
+```
+
+This is how agents get situational awareness (active tasks, upcoming events) without explicit tool calls. Context is best-effort — if a provider fails, the agent continues without that context.
+
+### Capability declaration
+
+Providers declare capability domains in their metadata:
+
+- `tasks`, `projects`, `calendar`, `knowledge`, `people`, `organizations`, `codebase`, `vault`, `datasets`, `documents`
+
+This lets the framework and setup UX know what a provider offers without loading its tools. The ExecuFunction reference provider covers 7 of these domains with 17 tools.
+
+### Health checks
+
+`checkProviderHealth()` runs health checks across all connected providers, useful for setup UX and monitoring.
 
 ## State Layers
 
@@ -191,5 +244,6 @@ Use this order:
 4. compose multiple tools with workflows
 5. add agents only when the model needs discretion
 6. add memory or RAG only when state or retrieval is required
+7. add context providers when you need external systems (task management, calendars, CRM, etc.)
 
 If you keep the runtime in mind, the rest of the framework stays predictable.

@@ -98,6 +98,7 @@ Read more: [Architecture](docs/ARCHITECTURE.md)
 | `defineAgent()` | adaptive multi-step tool use | an LLM loop over a filtered registry |
 | `createConversationMemory()` / `createFactMemory()` | thread/fact state | persistence plus memory tools |
 | `createRAG()` | semantic document retrieval | pgvector + embeddings + tools |
+| `connectProvider()` | external system context | structured tools from ExecuFunction, Obsidian, etc. |
 | `createStore()` / `createPgStore()` | persistence | storage layer, not retrieval |
 
 Rule of thumb:
@@ -107,6 +108,7 @@ Rule of thumb:
 - Use an agent only when the model needs to choose what to do next.
 - Add memory for state you control.
 - Add RAG for document retrieval by meaning.
+- Add a context provider when you need external systems (tasks, calendars, CRM).
 
 ## Capability Ladder
 
@@ -188,6 +190,32 @@ registry.registerAll(rag.createTools());
 ```
 
 RAG docs: [docs/RAG.md](docs/RAG.md)
+
+### 6. Connect external context
+
+Context providers bring external systems (task managers, calendars, CRM, knowledge bases) into the agent runtime as tools:
+
+```typescript
+import { connectProvider, contextPrompt } from "./framework/index.js";
+import { createExecuFunctionProvider } from "./providers/execufunction/index.js";
+
+// Connect — registers 17 tools tagged "context" + "context:execufunction"
+const exf = await connectProvider(
+  createExecuFunctionProvider({ token: process.env.EXF_PAT }),
+  registry,
+);
+
+// Inject active tasks + upcoming events into agent system prompts
+const context = await contextPrompt([exf]);
+```
+
+The `ContextProvider` interface is pluggable — implement `metadata`, `connect()`, and `createTools()` to bring any backend into the framework. See [Architecture](docs/ARCHITECTURE.md#context-providers) for the full interface.
+
+| Provider | Status | Capabilities |
+|----------|--------|--------------|
+| [ExecuFunction](src/providers/execufunction/) | Built-in | tasks, projects, calendar, knowledge, people, organizations, codebase |
+| Obsidian | Template (planned) | knowledge |
+| Notion | Template (planned) | knowledge, tasks, projects |
 
 ## Commands
 
@@ -291,6 +319,10 @@ See the [plugin README](plugins/openclaw-execufunction/) for details.
 openFunctions/
 ├── src/
 │   ├── framework/              # Core runtime + composition layers
+│   │   ├── context.ts          # Context provider interface
+│   │   └── ...                 # tool, registry, agents, memory, rag, workflows
+│   ├── providers/
+│   │   └── execufunction/      # ExecuFunction context provider (reference impl)
 │   ├── examples/               # Reference tool patterns
 │   ├── my-tools/               # Your tools
 │   └── index.ts                # MCP entrypoint
