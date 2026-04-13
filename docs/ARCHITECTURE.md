@@ -234,6 +234,43 @@ RAG is semantic retrieval over document chunks. It combines:
 
 See [RAG.md](RAG.md) for the full ingestion and search flow.
 
+## Chat Agent
+
+`createChatAgent()` is the highest-level composition primitive. It wires together an adapter, a registry, memory, and context providers into a single embeddable agent.
+
+```text
+createChatAgent(config)
+  → resolve adapter (provider + model)
+  → build filtered registry (tools, tags, exclusions)
+  → set up memory (conversation + facts → memory tools → registry)
+  → connect context providers (tools + context prompt → registry + system prompt)
+  → compose system prompt (preset/prompt/markdown + context + memory awareness)
+  → return ChatAgent { chat(), interactive(), serve(), reset(), destroy() }
+```
+
+The factory is async because context providers require `connect()` calls.
+
+### Three interfaces, one agent
+
+- `agent.chat(message)` — programmatic, returns `ChatResult { text, toolCalls, rounds, metadata }`
+- `agent.chat(message, { stream: true })` — returns `AsyncIterable<ChatStreamChunk>` with tool_call, tool_result, text, and done events
+- `agent.interactive()` — readline CLI loop
+- `agent.serve({ port })` — HTTP server with `/chat`, `/chat/stream` (SSE), `/health`, `/reset`
+
+### Config resolution
+
+The config drives everything declaratively:
+
+- `provider` resolves to an adapter factory (auto-detected from env vars if omitted)
+- `preset` / `prompt` resolves to a system prompt (preset name, inline string, markdown file path, or structured PromptOptions)
+- `tools` / `toolTags` / `excludeTools` build a filtered registry
+- `memory` (default: on) creates conversation + fact memory and registers memory tools
+- `providers` resolves string names (e.g., `"execufunction"`) to ContextProvider instances via dynamic import
+
+### Relationship to defineAgent()
+
+`defineAgent()` creates task-scoped agents for use inside crews and workflows. `createChatAgent()` creates session-scoped agents for direct user interaction. They use the same underlying primitives (registry, adapters, prompts) but serve different roles.
+
 ## How To Think About openFunctions
 
 Use this order:
@@ -241,9 +278,10 @@ Use this order:
 1. write a tool
 2. register it
 3. execute it through MCP or chat
-4. compose multiple tools with workflows
-5. add agents only when the model needs discretion
-6. add memory or RAG only when state or retrieval is required
-7. add context providers when you need external systems (task management, calendars, CRM, etc.)
+4. use `createChatAgent()` when you want a full agent with memory and context
+5. compose multiple tools with workflows when the control flow is known
+6. use `defineAgent()` inside crews when specialized agents need to collaborate
+7. add memory or RAG only when state or retrieval is required
+8. add context providers when you need external systems (task management, calendars, CRM, etc.)
 
 If you keep the runtime in mind, the rest of the framework stays predictable.

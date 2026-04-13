@@ -15,6 +15,10 @@ src/
     store.ts         # createStore() — JSON file persistence
     pg-store.ts      # createPgStore() — Postgres persistence (optional)
     registry.ts      # ToolRegistry — manages tools, provider format adapters
+    chat-agent.ts    # createChatAgent() — composable chat agent factory
+    chat-agent-types.ts # ChatAgent, ChatAgentConfig, ChatResult types
+    chat-agent-resolve.ts # Config resolution, provider auto-detection
+    chat-agent-http.ts # HTTP server for agent.serve()
     context.ts       # Context provider interface — connectProvider(), contextPrompt()
     server.ts        # startServer() — MCP server wrapper
     types.ts         # TypeScript interfaces
@@ -123,6 +127,7 @@ All imports come from `"../framework/index.js"`:
 | `connectProvider(provider, registry)` | Connect a context provider and register its tools |
 | `contextPrompt(providers[])` | Build system prompt context from connected providers |
 | `checkProviderHealth(providers[])` | Health check all connected providers |
+| `createChatAgent(config?)` | Composable chat agent (tools + memory + context + adapter) |
 
 ## ESM Import Requirement
 

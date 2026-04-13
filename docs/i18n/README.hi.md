@@ -1,4 +1,4 @@
-[English](../README.md) | [Hindi](README.hi.md)
+[English](../../README.md) | [हिन्दी](README.hi.md)
 
 <p align="center">
   <img src="../../assets/logo.svg" alt="openFunctions" width="600">
@@ -61,11 +61,11 @@ import { defineTool, ok } from "../framework/index.js";
 
 export const rollDice = defineTool({
   name: "roll_dice",
-  description: "Roll a dice with the given number of sides",
+  description: "Roll a dice with the given number of sides", // दिए गए पक्षों की संख्या वाला पासा फेंकें
   inputSchema: {
     type: "object",
     properties: {
-      sides: { type: "number", description: "Number of sides (default 6)" },
+      sides: { type: "number", description: "Number of sides (default 6)" }, // पक्षों की संख्या (डिफ़ॉल्ट 6)
     },
   },
   handler: async ({ sides }) => {
@@ -83,26 +83,30 @@ export const rollDice = defineTool({
 - वर्कफ़्लो में संयोजित
 - एजेंट-विशिष्ट रजिस्ट्रियों में फ़िल्टर किया गया
 
-और पढ़ें: [आर्किटेक्चर](docs/ARCHITECTURE.md)
+और पढ़ें: [आर्किटेक्चर](../../docs/ARCHITECTURE.md)
 
 ## सही प्रिमिटिव चुनें
 
 | इसका उपयोग करें | जब आप चाहते हैं | यह वास्तव में क्या है |
 |----------|---------------|-------------------|
 | `defineTool()` | कॉल करने योग्य AI-उन्मुख व्यावसायिक तर्क | मुख्य प्रिमिटिव |
+| `createChatAgent()` | एक संयोजनीय, एम्बेड करने योग्य AI एजेंट | टूल + मेमोरी + संदर्भ + एडेप्टर एक कॉन्फ़िग में |
 | `pipe()` | नियतात्मक ऑर्केस्ट्रेशन | कोड-संचालित टूल/LLM पाइपलाइन |
 | `defineAgent()` | अनुकूली बहु-चरणीय टूल उपयोग | एक फ़िल्टर्ड रजिस्ट्री पर एक LLM लूप |
 | `createConversationMemory()` / `createFactMemory()` | थ्रेड/तथ्य स्थिति | परसिस्टेंस और मेमोरी टूल |
 | `createRAG()` | सिमेंटिक दस्तावेज़ पुनर्प्राप्ति | pgvector + एम्बेडिंग + टूल |
+| `connectProvider()` | बाहरी सिस्टम संदर्भ | ExecuFunction, Obsidian आदि से संरचित टूल |
 | `createStore()` / `createPgStore()` | परसिस्टेंस | स्टोरेज लेयर, पुनर्प्राप्ति नहीं |
 
 अंगूठे का नियम:
 
 - एक टूल से शुरू करें।
+- जब आप एक संपूर्ण एजेंट चाहें जिसमें मेमोरी और संदर्भ हो तो `createChatAgent()` का उपयोग करें।
 - जब आप अनुक्रम जानते हों तो वर्कफ़्लो का उपयोग करें।
-- एजेंट का उपयोग तभी करें जब मॉडल को यह चुनने की आवश्यकता हो कि आगे क्या करना है।
+- जब आपको क्रू के अंदर विशेष एजेंटों की आवश्यकता हो तो `defineAgent()` का उपयोग करें।
 - आपके द्वारा नियंत्रित स्थिति के लिए मेमोरी जोड़ें।
 - अर्थ के आधार पर दस्तावेज़ पुनर्प्राप्ति के लिए RAG जोड़ें।
+- जब आपको बाहरी सिस्टम (कार्य, कैलेंडर, CRM) की आवश्यकता हो तो एक संदर्भ प्रदाता जोड़ें।
 
 ## क्षमता सीढ़ी
 
@@ -142,9 +146,32 @@ const research = pipe(toolStep(registry, "define_word"))
 await research.run({ word: "ephemeral" });
 ```
 
-### 4. एजेंटों के साथ अनुकूली व्यवहार जोड़ें
+### 4. एक चैट एजेंट बनाएं
 
-एजेंट उन्हीं टूल का उपयोग करते हैं, लेकिन एक फ़िल्टर्ड रजिस्ट्री और एक तर्क लूप के माध्यम से:
+`createChatAgent()` टूल, मेमोरी, संदर्भ प्रदाताओं और एक AI एडेप्टर को एकल एम्बेड करने योग्य एजेंट में संयोजित करता है:
+
+```typescript
+import { createChatAgent } from "./framework/index.js";
+
+const agent = await createChatAgent({
+  provider: "gemini",
+  preset: "study-buddy",
+  memory: true,                    // वार्तालाप + तथ्य मेमोरी (डिफ़ॉल्ट रूप से चालू)
+  providers: ["execufunction"],    // बाहरी संदर्भ जोड़ें
+});
+
+// इसे चार तरीकों से उपयोग करें:
+await agent.interactive();                          // CLI
+const result = await agent.chat("Create a task");   // प्रोग्रामेटिक
+for await (const chunk of agent.chat("hello", { stream: true })) { ... }  // स्ट्रीमिंग
+await agent.serve({ port: 3000 });                  // HTTP सर्वर
+```
+
+वही कॉन्फ़िग कोड, CLI फ्लैग, या YAML फ़ाइलों से काम करता है। मेमोरी डिफ़ॉल्ट रूप से चालू है — एजेंट सत्रों के बीच याद रखता है।
+
+### 5. एजेंटों के साथ अनुकूली व्यवहार जोड़ें
+
+`defineAgent()` क्रू और वर्कफ़्लो के अंदर विशेष एजेंटों के लिए है — फ़िल्टर्ड रजिस्ट्रियां और तर्क लूप:
 
 ```typescript
 import { defineAgent } from "./framework/index.js";
@@ -159,7 +186,7 @@ const researcher = defineAgent({
 
 जब कई विशेष एजेंटों को सहयोग करने की आवश्यकता हो तो क्रू का उपयोग करें।
 
-### 5. आवश्यकता पड़ने पर ही स्थिति जोड़ें
+### 6. आवश्यकता पड़ने पर ही स्थिति जोड़ें
 
 परसिस्टेंस:
 
@@ -183,7 +210,33 @@ const rag = await createRAG({ embeddingProvider: "gemini" });
 registry.registerAll(rag.createTools());
 ```
 
-RAG दस्तावेज़: [docs/RAG.md](docs/RAG.md)
+RAG दस्तावेज़: [docs/RAG.md](../../docs/RAG.md)
+
+### 7. बाहरी संदर्भ जोड़ें
+
+संदर्भ प्रदाता बाहरी सिस्टम (कार्य प्रबंधक, कैलेंडर, CRM, ज्ञान आधार) को एजेंट रनटाइम में टूल के रूप में लाते हैं:
+
+```typescript
+import { connectProvider, contextPrompt } from "./framework/index.js";
+import { createExecuFunctionProvider } from "./providers/execufunction/index.js";
+
+// कनेक्ट करें — "context" + "context:execufunction" टैग वाले 17 टूल पंजीकृत करता है
+const exf = await connectProvider(
+  createExecuFunctionProvider({ token: process.env.EXF_PAT }),
+  registry,
+);
+
+// एजेंट सिस्टम प्रॉम्प्ट में सक्रिय कार्य + आगामी इवेंट इंजेक्ट करें
+const context = await contextPrompt([exf]);
+```
+
+`ContextProvider` इंटरफ़ेस प्लगेबल है — किसी भी बैकएंड को फ्रेमवर्क में लाने के लिए `metadata`, `connect()`, और `createTools()` को लागू करें। पूर्ण इंटरफ़ेस के लिए [आर्किटेक्चर](../../docs/ARCHITECTURE.md#context-providers) देखें।
+
+| प्रदाता | स्थिति | क्षमताएं |
+|----------|--------|--------------|
+| [ExecuFunction](../../src/providers/execufunction/) | अंतर्निहित | कार्य, परियोजनाएं, कैलेंडर, ज्ञान, लोग, संगठन, कोडबेस |
+| Obsidian | टेम्पलेट (योजनाबद्ध) | ज्ञान |
+| Notion | टेम्पलेट (योजनाबद्ध) | ज्ञान, कार्य, परियोजनाएं |
 
 ## कमांड
 
@@ -193,6 +246,7 @@ npm run dev                 # देव मोड — सहेजने पर 
 npm test                    # टूल-परिभाषित स्वचालित परीक्षण चलाएं
 npm run chat                # अपने टूल का उपयोग करके AI के साथ चैट करें
 npm run chat -- gemini      # एक विशिष्ट प्रदाता को बाध्य करें
+npm run chat -- --no-memory # बिना स्थायी मेमोरी के चैट करें
 npm run create-tool <name>  # एक नया टूल स्केफोल्ड करें
 npm run docs                # टूल संदर्भ दस्तावेज़ जेनरेट करें
 npm run inspect             # MCP इंस्पेक्टर वेब UI
@@ -253,8 +307,33 @@ defineTool({
 
 ## दस्तावेज़
 
-- [आर्किटेक्चर](docs/ARCHITECTURE.md): रनटाइम मॉडल, फ़िल्टर्ड रजिस्ट्रियां, सिंथेटिक टूल और निष्पादन पथ
-- [RAG](docs/RAG.md): सिमेंटिक चंकिंग, Gemini/OpenAI एम्बेडिंग, pgvector स्कीमा, HNSW सर्च और टूल इंटीग्रेशन
+- [आर्किटेक्चर](../../docs/ARCHITECTURE.md): रनटाइम मॉडल, फ़िल्टर्ड रजिस्ट्रियां, सिंथेटिक टूल और निष्पादन पथ
+- [RAG](../../docs/RAG.md): सिमेंटिक चंकिंग, Gemini/OpenAI एम्बेडिंग, pgvector स्कीमा, HNSW सर्च और टूल इंटीग्रेशन
+
+## प्लगइन
+
+### OpenClaw के लिए ExecuFunction
+
+[`@openfunctions/openclaw-execufunction`](../../plugins/openclaw-execufunction/) प्लगइन [ExecuFunction](https://execufunction.com) को [OpenClaw](https://github.com/openclaw/openclaw) एजेंट इकोसिस्टम में लाता है — 6 डोमेन में 17 टूल:
+
+| डोमेन | टूल | यह क्या करता है |
+|--------|-------|--------------|
+| कार्य | `exf_tasks_list`, `exf_tasks_create`, `exf_tasks_update`, `exf_tasks_complete` | प्राथमिकताओं (do_now/do_next/do_later/delegate/drop) के साथ संरचित कार्य प्रबंधन |
+| कैलेंडर | `exf_calendar_list`, `exf_calendar_create`, `exf_calendar_update` | इवेंट शेड्यूलिंग और लुकअप |
+| ज्ञान | `exf_notes_search`, `exf_notes_create`, `exf_notes_get` | ज्ञान आधार में सिमेंटिक सर्च |
+| परियोजनाएं | `exf_projects_list`, `exf_projects_context` | परियोजना स्थिति और पूर्ण संदर्भ (कार्य, नोट्स, सिग्नल) |
+| लोग/CRM | `exf_people_search`, `exf_person_create`, `exf_org_search` | संपर्क और संगठन प्रबंधन |
+| कोडबेस | `exf_codebase_search`, `exf_code_who_knows` | सिमेंटिक कोड सर्च और विशेषज्ञता ट्रैकिंग |
+
+इंस्टॉल करें:
+
+```bash
+openclaw plugins install @openfunctions/openclaw-execufunction
+```
+
+अपने वातावरण में `EXF_PAT` सेट करें (या OpenClaw प्लगइन सेटिंग्स के माध्यम से कॉन्फ़िगर करें), और आपके OpenClaw एजेंट को स्थायी कार्य, कैलेंडर जागरूकता, सिमेंटिक ज्ञान खोज, CRM, और कोड इंटेलिजेंस मिल जाता है — ExecuFunction के क्लाउड API द्वारा समर्थित।
+
+विवरण के लिए [प्लगइन README](../../plugins/openclaw-execufunction/) देखें।
 
 ## प्रोजेक्ट संरचना
 
@@ -262,9 +341,19 @@ defineTool({
 openFunctions/
 ├── src/
 │   ├── framework/              # कोर रनटाइम + कंपोज़िशन लेयर्स
+│   │   ├── chat-agent.ts       # createChatAgent() — संयोजनीय चैट एजेंट फैक्ट्री
+│   │   ├── chat-agent-types.ts # ChatAgent, ChatAgentConfig, ChatResult प्रकार
+│   │   ├── chat-agent-resolve.ts # कॉन्फ़िग रिज़ॉल्यूशन, प्रदाता ऑटो-डिटेक्शन
+│   │   ├── chat-agent-http.ts  # agent.serve() के लिए HTTP सर्वर
+│   │   ├── context.ts          # संदर्भ प्रदाता इंटरफ़ेस
+│   │   └── ...                 # टूल, रजिस्ट्री, एजेंट, मेमोरी, RAG, वर्कफ़्लो
+│   ├── providers/
+│   │   └── execufunction/      # ExecuFunction संदर्भ प्रदाता (संदर्भ कार्यान्वयन)
 │   ├── examples/               # संदर्भ टूल पैटर्न
 │   ├── my-tools/               # आपके टूल
 │   └── index.ts                # MCP एंट्रीपॉइंट
+├── plugins/
+│   └── openclaw-execufunction/ # OpenClaw के लिए ExecuFunction प्लगइन
 ├── docs/                       # आर्किटेक्चर दस्तावेज़
 ├── scripts/                    # चैट, create-tool, docs
 ├── test-client/                # CLI टेस्टर + टेस्ट रनर
@@ -274,4 +363,4 @@ openFunctions/
 
 ## लाइसेंस
 
-MIT — [LICENSE](LICENSE) देखें
+MIT — [LICENSE](../../LICENSE) देखें

@@ -1,4 +1,4 @@
-[English](../README.md) | [Russian](README.ru.md)
+[English](../../README.md) | [Русский](README.ru.md)
 
 <p align="center">
   <img src="../../assets/logo.svg" alt="openFunctions" width="600">
@@ -50,7 +50,7 @@ cp .env.example .env
 npm run test-tools
 ```
 
-Первое, что нужно создать, это инструмент, а не агент.
+Первое, что нужно создать — это инструмент, а не агент.
 
 ## Ментальная модель
 
@@ -61,11 +61,11 @@ import { defineTool, ok } from "../framework/index.js";
 
 export const rollDice = defineTool({
   name: "roll_dice",
-  description: "Roll a dice with the given number of sides",
+  description: "Roll a dice with the given number of sides", // Бросить кубик с заданным количеством граней
   inputSchema: {
     type: "object",
     properties: {
-      sides: { type: "number", description: "Number of sides (default 6)" },
+      sides: { type: "number", description: "Number of sides (default 6)" }, // Количество граней (по умолчанию 6)
     },
   },
   handler: async ({ sides }) => {
@@ -77,7 +77,7 @@ export const rollDice = defineTool({
 
 Это одно определение может быть:
 
-- выполнено напрямую с помощью `registry.execute()`
+- выполнено напрямую через `registry.execute()`
 - предоставлено Claude/Desktop через MCP
 - использовано внутри интерактивного чат-цикла
 - скомпоновано в рабочие процессы
@@ -90,19 +90,23 @@ export const rollDice = defineTool({
 | Используйте это | Когда вы хотите | Что это на самом деле |
 |----------|---------------|-------------------|
 | `defineTool()` | вызываемая бизнес-логика, ориентированная на ИИ | основной примитив |
+| `createChatAgent()` | компонуемый, встраиваемый ИИ-агент | инструменты + память + контекст + адаптер в одной конфигурации |
 | `pipe()` | детерминированная оркестровка | конвейер инструментов/LLM, управляемый кодом |
 | `defineAgent()` | адаптивное многошаговое использование инструментов | цикл LLM над отфильтрованным реестром |
 | `createConversationMemory()` / `createFactMemory()` | состояние потока/факта | персистентность плюс инструменты памяти |
-| `createRAG()` | семантический поиск документов | `pgvector + embeddings + tools` |
+| `createRAG()` | семантический поиск документов | pgvector + embeddings + инструменты |
+| `connectProvider()` | контекст из внешней системы | структурированные инструменты из ExecuFunction, Obsidian и т.д. |
 | `createStore()` / `createPgStore()` | персистентность | уровень хранения, а не извлечения |
 
 Эмпирическое правило:
 
 - Начните с инструмента.
+- Используйте `createChatAgent()`, когда вам нужен полноценный агент с памятью и контекстом.
 - Используйте рабочий процесс, когда вы знаете последовательность.
-- Используйте агента только тогда, когда модели нужно выбрать, что делать дальше.
+- Используйте `defineAgent()`, когда вам нужны специализированные агенты в командах.
 - Добавьте память для состояния, которое вы контролируете.
 - Добавьте RAG для извлечения документов по смыслу.
+- Добавьте провайдер контекста, когда вам нужны внешние системы (задачи, календари, CRM).
 
 ## Лестница возможностей
 
@@ -142,24 +146,47 @@ const research = pipe(toolStep(registry, "define_word"))
 await research.run({ word: "ephemeral" });
 ```
 
-### 4. Добавьте адаптивное поведение с агентами
+### 4. Создайте чат-агента
 
-Агенты используют те же инструменты, но через отфильтрованный реестр и цикл рассуждений:
+`createChatAgent()` компонует инструменты, память, провайдеры контекста и адаптер ИИ в единого встраиваемого агента:
+
+```typescript
+import { createChatAgent } from "./framework/index.js";
+
+const agent = await createChatAgent({
+  provider: "gemini",
+  preset: "study-buddy",
+  memory: true,                    // память разговоров + фактов (включена по умолчанию)
+  providers: ["execufunction"],    // подключить внешний контекст
+});
+
+// Четыре способа использования:
+await agent.interactive();                          // CLI
+const result = await agent.chat("Create a task");   // программный вызов
+for await (const chunk of agent.chat("hello", { stream: true })) { ... }  // потоковая передача
+await agent.serve({ port: 3000 });                  // HTTP-сервер
+```
+
+Одна и та же конфигурация работает из кода, флагов CLI или YAML-файлов. Память включена по умолчанию — агент запоминает между сессиями.
+
+### 5. Добавьте адаптивное поведение с агентами
+
+`defineAgent()` предназначен для специализированных агентов в командах и рабочих процессах — отфильтрованные реестры и циклы рассуждений:
 
 ```typescript
 import { defineAgent } from "./framework/index.js";
 
 const researcher = defineAgent({
   name: "researcher",
-  role: "Research Analyst",
-  goal: "Find accurate information using available tools",
+  role: "Research Analyst", // Аналитик-исследователь
+  goal: "Find accurate information using available tools", // Находить точную информацию с помощью доступных инструментов
   toolTags: ["search"],
 });
 ```
 
 Используйте команды, когда нескольким специализированным агентам необходимо сотрудничать.
 
-### 5. Добавляйте состояние только при необходимости
+### 6. Добавляйте состояние только при необходимости
 
 Персистентность:
 
@@ -185,6 +212,32 @@ registry.registerAll(rag.createTools());
 
 Документация по RAG: [docs/RAG.md](docs/RAG.md)
 
+### 7. Подключите внешний контекст
+
+Провайдеры контекста подключают внешние системы (менеджеры задач, календари, CRM, базы знаний) к среде выполнения агентов как инструменты:
+
+```typescript
+import { connectProvider, contextPrompt } from "./framework/index.js";
+import { createExecuFunctionProvider } from "./providers/execufunction/index.js";
+
+// Подключение — регистрирует 17 инструментов с тегами "context" + "context:execufunction"
+const exf = await connectProvider(
+  createExecuFunctionProvider({ token: process.env.EXF_PAT }),
+  registry,
+);
+
+// Внедряет активные задачи + предстоящие события в системные промпты агента
+const context = await contextPrompt([exf]);
+```
+
+Интерфейс `ContextProvider` является подключаемым — реализуйте `metadata`, `connect()` и `createTools()` для интеграции любого бэкенда во фреймворк. Подробнее в [Архитектура](docs/ARCHITECTURE.md#context-providers).
+
+| Провайдер | Статус | Возможности |
+|----------|--------|--------------|
+| [ExecuFunction](src/providers/execufunction/) | Встроен | задачи, проекты, календарь, знания, люди, организации, кодовая база |
+| Obsidian | Шаблон (планируется) | знания |
+| Notion | Шаблон (планируется) | знания, задачи, проекты |
+
 ## Команды
 
 ```bash
@@ -193,6 +246,7 @@ npm run dev                 # Режим разработки — автомат
 npm test                    # Запуск автоматических тестов, определенных инструментом
 npm run chat                # Общение с ИИ с использованием ваших инструментов
 npm run chat -- gemini      # Принудительное использование конкретного провайдера
+npm run chat -- --no-memory # Чат без постоянной памяти
 npm run create-tool <name>  # Создание нового инструмента
 npm run docs                # Генерация справочной документации по инструментам
 npm run inspect             # Веб-интерфейс инспектора MCP
@@ -229,8 +283,8 @@ defineTool({
   name: "create_task",
   // ...
   tests: [
-    { name: "creates a task", input: { title: "Read ch5", subject: "Bio" }, expect: { success: true } },
-    { name: "fails without subject", input: { title: "Read ch5" }, expect: { success: false } },
+    { name: "creates a task", input: { title: "Read ch5", subject: "Bio" }, expect: { success: true } }, // создает задачу
+    { name: "fails without subject", input: { title: "Read ch5" }, expect: { success: false } }, // не проходит без темы
   ],
 });
 ```
@@ -256,17 +310,52 @@ defineTool({
 - [Архитектура](docs/ARCHITECTURE.md): модель среды выполнения, отфильтрованные реестры, синтетические инструменты и пути выполнения
 - [RAG](docs/RAG.md): семантическое разбиение на чанки, встраивания Gemini/OpenAI, схема pgvector, поиск HNSW и интеграция инструментов
 
+## Плагины
+
+### ExecuFunction для OpenClaw
+
+Плагин [`@openfunctions/openclaw-execufunction`](plugins/openclaw-execufunction/) подключает [ExecuFunction](https://execufunction.com) к экосистеме агентов [OpenClaw](https://github.com/openclaw/openclaw) — 17 инструментов в 6 областях:
+
+| Область | Инструменты | Что он делает |
+|--------|-------|--------------|
+| Задачи | `exf_tasks_list`, `exf_tasks_create`, `exf_tasks_update`, `exf_tasks_complete` | Структурированное управление задачами с приоритетами (do_now/do_next/do_later/delegate/drop) |
+| Календарь | `exf_calendar_list`, `exf_calendar_create`, `exf_calendar_update` | Планирование и поиск событий |
+| Знания | `exf_notes_search`, `exf_notes_create`, `exf_notes_get` | Семантический поиск по базе знаний |
+| Проекты | `exf_projects_list`, `exf_projects_context` | Статус проекта и полный контекст (задачи, заметки, сигналы) |
+| Люди/CRM | `exf_people_search`, `exf_person_create`, `exf_org_search` | Управление контактами и организациями |
+| Кодовая база | `exf_codebase_search`, `exf_code_who_knows` | Семантический поиск по коду и отслеживание экспертизы |
+
+Установка:
+
+```bash
+openclaw plugins install @openfunctions/openclaw-execufunction
+```
+
+Установите `EXF_PAT` в окружении (или настройте через параметры плагина OpenClaw), и ваш агент OpenClaw получит постоянные задачи, осведомленность о календаре, семантический поиск по знаниям, CRM и аналитику кода — все на основе облачного API ExecuFunction.
+
+Подробнее в [README плагина](plugins/openclaw-execufunction/).
+
 ## Структура проекта
 
 ```text
 openFunctions/
 ├── src/
 │   ├── framework/              # Основная среда выполнения + уровни композиции
+│   │   ├── chat-agent.ts       # createChatAgent() — фабрика компонуемых чат-агентов
+│   │   ├── chat-agent-types.ts # Типы ChatAgent, ChatAgentConfig, ChatResult
+│   │   ├── chat-agent-resolve.ts # Разрешение конфигурации, автоопределение провайдера
+│   │   ├── chat-agent-http.ts  # HTTP-сервер для agent.serve()
+│   │   ├── context.ts          # Интерфейс провайдера контекста
+│   │   └── ...                 # tool, registry, agents, memory, rag, workflows
+│   ├── providers/
+│   │   └── execufunction/      # Провайдер контекста ExecuFunction (эталонная реализация)
 │   ├── examples/               # Эталонные шаблоны инструментов
 │   ├── my-tools/               # Ваши инструменты
 │   └── index.ts                # Точка входа MCP
+├── plugins/
+│   └── openclaw-execufunction/ # Плагин ExecuFunction для OpenClaw
 ├── docs/                       # Документация по архитектуре
-├── scripts/                    # чат, создание инструмента, документация
+├── scripts/                    # chat, create-tool, docs
 ├── test-client/                # CLI-тестер + запускатель тестов
 ├── system-prompts/             # Пресеты промптов
 └── package.json

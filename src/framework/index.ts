@@ -75,6 +75,19 @@ export type {
   ContextCapability,
 } from "./context.js";
 
+// Chat Agent
+export { createChatAgent } from "./chat-agent.js";
+export type {
+  ChatAgent,
+  ChatAgentConfig,
+  ChatResult,
+  ChatStreamChunk,
+  ChatAgentChatOptions,
+  ServeOptions,
+  MemoryConfig,
+  PeerConfig,
+} from "./chat-agent-types.js";
+
 // Test runner
 export { runTests } from "./test-runner.js";
 

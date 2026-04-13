@@ -94,6 +94,7 @@ Read more: [Architecture](docs/ARCHITECTURE.md)
 | Use this | When you want | What it really is |
 |----------|---------------|-------------------|
 | `defineTool()` | callable AI-facing business logic | the core primitive |
+| `createChatAgent()` | a composable, embeddable AI agent | tools + memory + context + adapter in one config |
 | `pipe()` | deterministic orchestration | code-driven tool/LLM pipeline |
 | `defineAgent()` | adaptive multi-step tool use | an LLM loop over a filtered registry |
 | `createConversationMemory()` / `createFactMemory()` | thread/fact state | persistence plus memory tools |
@@ -104,8 +105,9 @@ Read more: [Architecture](docs/ARCHITECTURE.md)
 Rule of thumb:
 
 - Start with a tool.
+- Use `createChatAgent()` when you want a complete agent with memory and context.
 - Use a workflow when you know the sequence.
-- Use an agent only when the model needs to choose what to do next.
+- Use `defineAgent()` when you need specialized agents inside crews.
 - Add memory for state you control.
 - Add RAG for document retrieval by meaning.
 - Add a context provider when you need external systems (tasks, calendars, CRM).
@@ -148,9 +150,32 @@ const research = pipe(toolStep(registry, "define_word"))
 await research.run({ word: "ephemeral" });
 ```
 
-### 4. Add adaptive behavior with agents
+### 4. Build a chat agent
 
-Agents use the same tools, but through a filtered registry and a reasoning loop:
+`createChatAgent()` composes tools, memory, context providers, and an AI adapter into a single embeddable agent:
+
+```typescript
+import { createChatAgent } from "./framework/index.js";
+
+const agent = await createChatAgent({
+  provider: "gemini",
+  preset: "study-buddy",
+  memory: true,                    // conversation + fact memory (on by default)
+  providers: ["execufunction"],    // connect external context
+});
+
+// Use it four ways:
+await agent.interactive();                          // CLI
+const result = await agent.chat("Create a task");   // programmatic
+for await (const chunk of agent.chat("hello", { stream: true })) { ... }  // streaming
+await agent.serve({ port: 3000 });                  // HTTP server
+```
+
+The same config works from code, CLI flags, or YAML files. Memory is on by default — the agent remembers across sessions.
+
+### 5. Add adaptive behavior with agents
+
+`defineAgent()` is for specialized agents inside crews and workflows — filtered registries and reasoning loops:
 
 ```typescript
 import { defineAgent } from "./framework/index.js";
@@ -165,7 +190,7 @@ const researcher = defineAgent({
 
 Use crews when multiple specialized agents need to collaborate.
 
-### 5. Add state only when needed
+### 6. Add state only when needed
 
 Persistence:
 
@@ -191,7 +216,7 @@ registry.registerAll(rag.createTools());
 
 RAG docs: [docs/RAG.md](docs/RAG.md)
 
-### 6. Connect external context
+### 7. Connect external context
 
 Context providers bring external systems (task managers, calendars, CRM, knowledge bases) into the agent runtime as tools:
 
@@ -225,6 +250,7 @@ npm run dev                 # Dev mode — auto-restarts on save
 npm test                    # Run tool-defined automated tests
 npm run chat                # Chat with AI using your tools
 npm run chat -- gemini      # Force a specific provider
+npm run chat -- --no-memory # Chat without persistent memory
 npm run create-tool <name>  # Scaffold a new tool
 npm run docs                # Generate tool reference docs
 npm run inspect             # MCP Inspector web UI
@@ -319,6 +345,10 @@ See the [plugin README](plugins/openclaw-execufunction/) for details.
 openFunctions/
 ├── src/
 │   ├── framework/              # Core runtime + composition layers
+│   │   ├── chat-agent.ts       # createChatAgent() — composable chat agent factory
+│   │   ├── chat-agent-types.ts # ChatAgent, ChatAgentConfig, ChatResult types
+│   │   ├── chat-agent-resolve.ts # Config resolution, provider auto-detection
+│   │   ├── chat-agent-http.ts  # HTTP server for agent.serve()
 │   │   ├── context.ts          # Context provider interface
 │   │   └── ...                 # tool, registry, agents, memory, rag, workflows
 │   ├── providers/

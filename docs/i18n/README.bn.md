@@ -1,4 +1,4 @@
-[English](../README.md) | [Bengali](README.bn.md)
+[English](../../README.md) | [বাংলা](README.bn.md)
 
 <p align="center">
   <img src="../../assets/logo.svg" alt="openFunctions" width="600">
@@ -11,7 +11,7 @@
 <p align="center">
   <a href="#quick-start">দ্রুত শুরু</a> &middot;
   <a href="#the-mental-model">মানসিক মডেল</a> &middot;
-  <a href="#choose-the-right-primitive">একটি আদিম উপাদান বেছে নিন</a> &middot;
+  <a href="#choose-the-right-primitive">সঠিক আদিম উপাদান বেছে নিন</a> &middot;
   <a href="#capability-ladder">ক্ষমতার সিঁড়ি</a> &middot;
   <a href="#providers">প্রোভাইডারগণ</a> &middot;
   <a href="#examples">উদাহরণ</a> &middot;
@@ -61,11 +61,11 @@ import { defineTool, ok } from "../framework/index.js";
 
 export const rollDice = defineTool({
   name: "roll_dice",
-  description: "Roll a dice with the given number of sides",
+  description: "Roll a dice with the given number of sides", // প্রদত্ত সংখ্যক পক্ষের সাথে একটি পাশা গড়ান
   inputSchema: {
     type: "object",
     properties: {
-      sides: { type: "number", description: "Number of sides (default 6)" },
+      sides: { type: "number", description: "Number of sides (default 6)" }, // পক্ষের সংখ্যা (ডিফল্ট 6)
     },
   },
   handler: async ({ sides }) => {
@@ -83,26 +83,30 @@ export const rollDice = defineTool({
 - ওয়ার্কফ্লোতে একত্রিত করা
 - এজেন্ট-নির্দিষ্ট রেজিস্ট্রিগুলিতে ফিল্টার করা
 
-আরও পড়ুন: [আর্কিটেকচার](docs/ARCHITECTURE.md)
+আরও পড়ুন: [আর্কিটেকচার](../../docs/ARCHITECTURE.md)
 
 ## সঠিক আদিম উপাদান বেছে নিন
 
 | এটি ব্যবহার করুন | যখন আপনি চান | এটি আসলে কী |
 |----------|---------------|-------------------|
 | `defineTool()` | কলযোগ্য AI-মুখী ব্যবসায়িক যুক্তি | মূল আদিম উপাদান |
+| `createChatAgent()` | একটি সংযোজনযোগ্য, এমবেডযোগ্য AI এজেন্ট | টুল + মেমরি + প্রসঙ্গ + অ্যাডাপ্টার একটি কনফিগে |
 | `pipe()` | সুনির্দিষ্ট অর্কেস্ট্রেশন | কোড-চালিত টুল/LLM পাইপলাইন |
 | `defineAgent()` | অভিযোজিত বহু-ধাপের টুল ব্যবহার | একটি ফিল্টার করা রেজিস্ট্রি জুড়ে একটি LLM লুপ |
 | `createConversationMemory()` / `createFactMemory()` | থ্রেড/ফ্যাক্ট স্টেট | পার্সিসটেন্স এবং মেমরি টুল |
 | `createRAG()` | সিমান্টিক ডকুমেন্ট পুনরুদ্ধার | pgvector + embeddings + টুল |
+| `connectProvider()` | বাহ্যিক সিস্টেম প্রসঙ্গ | ExecuFunction, Obsidian ইত্যাদি থেকে কাঠামোবদ্ধ টুল |
 | `createStore()` / `createPgStore()` | পার্সিসটেন্স | স্টোরেজ লেয়ার, পুনরুদ্ধার নয় |
 
 সাধারণ নিয়ম:
 
 - একটি টুল দিয়ে শুরু করুন।
+- যখন আপনি মেমরি এবং প্রসঙ্গসহ একটি সম্পূর্ণ এজেন্ট চান তখন `createChatAgent()` ব্যবহার করুন।
 - যখন আপনি ক্রম জানেন তখন একটি ওয়ার্কফ্লো ব্যবহার করুন।
-- শুধুমাত্র তখনই একটি এজেন্ট ব্যবহার করুন যখন মডেলকে পরবর্তী কী করতে হবে তা বেছে নিতে হবে।
+- যখন আপনার ক্রু-র ভিতরে বিশেষায়িত এজেন্ট প্রয়োজন হয় তখন `defineAgent()` ব্যবহার করুন।
 - আপনার নিয়ন্ত্রিত অবস্থার জন্য মেমরি যোগ করুন।
 - অর্থ দ্বারা ডকুমেন্ট পুনরুদ্ধারের জন্য RAG যোগ করুন।
+- যখন আপনার বাহ্যিক সিস্টেম (টাস্ক, ক্যালেন্ডার, CRM) প্রয়োজন হয় তখন একটি প্রসঙ্গ প্রোভাইডার যোগ করুন।
 
 ## ক্ষমতার সিঁড়ি
 
@@ -130,7 +134,7 @@ npm run chat -- gemini
 
 ### 3. ওয়ার্কফ্লো দিয়ে এটি একত্রিত করুন
 
-ওয়ার্কফ্লো হল ডিফল্ট “উন্নত” আদিম উপাদান কারণ নিয়ন্ত্রণ প্রবাহ সুস্পষ্ট থাকে:
+ওয়ার্কফ্লো হল ডিফল্ট "উন্নত" আদিম উপাদান কারণ নিয়ন্ত্রণ প্রবাহ সুস্পষ্ট থাকে:
 
 ```typescript
 import { pipe, toolStep, llmStep } from "./framework/index.js";
@@ -142,9 +146,32 @@ const research = pipe(toolStep(registry, "define_word"))
 await research.run({ word: "ephemeral" });
 ```
 
-### 4. এজেন্টদের সাথে অভিযোজিত আচরণ যোগ করুন
+### 4. একটি চ্যাট এজেন্ট তৈরি করুন
 
-এজেন্টরা একই টুল ব্যবহার করে, তবে একটি ফিল্টার করা রেজিস্ট্রি এবং একটি যুক্তি লুপের মাধ্যমে:
+`createChatAgent()` টুল, মেমরি, প্রসঙ্গ প্রোভাইডার এবং একটি AI অ্যাডাপ্টারকে একটি একক এমবেডযোগ্য এজেন্টে একত্রিত করে:
+
+```typescript
+import { createChatAgent } from "./framework/index.js";
+
+const agent = await createChatAgent({
+  provider: "gemini",
+  preset: "study-buddy",
+  memory: true,                    // কথোপকথন + ফ্যাক্ট মেমরি (ডিফল্টভাবে চালু)
+  providers: ["execufunction"],    // বাহ্যিক প্রসঙ্গ সংযুক্ত করুন
+});
+
+// চারটি উপায়ে ব্যবহার করুন:
+await agent.interactive();                          // CLI
+const result = await agent.chat("Create a task");   // প্রোগ্রাম্যাটিক
+for await (const chunk of agent.chat("hello", { stream: true })) { ... }  // স্ট্রিমিং
+await agent.serve({ port: 3000 });                  // HTTP সার্ভার
+```
+
+একই কনফিগ কোড, CLI ফ্ল্যাগ বা YAML ফাইল থেকে কাজ করে। মেমরি ডিফল্টভাবে চালু থাকে — এজেন্ট সেশনের মধ্যে মনে রাখে।
+
+### 5. এজেন্টদের সাথে অভিযোজিত আচরণ যোগ করুন
+
+`defineAgent()` ক্রু এবং ওয়ার্কফ্লোর ভিতরে বিশেষায়িত এজেন্টদের জন্য — ফিল্টার করা রেজিস্ট্রি এবং যুক্তি লুপ:
 
 ```typescript
 import { defineAgent } from "./framework/index.js";
@@ -159,7 +186,7 @@ const researcher = defineAgent({
 
 যখন একাধিক বিশেষায়িত এজেন্টের সহযোগিতা প্রয়োজন হয় তখন ক্রু ব্যবহার করুন।
 
-### 5. শুধুমাত্র প্রয়োজনে স্টেট যোগ করুন
+### 6. শুধুমাত্র প্রয়োজনে স্টেট যোগ করুন
 
 পার্সিসটেন্স:
 
@@ -183,7 +210,33 @@ const rag = await createRAG({ embeddingProvider: "gemini" });
 registry.registerAll(rag.createTools());
 ```
 
-RAG ডকুমেন্টেশন: [docs/RAG.md](docs/RAG.md)
+RAG ডকুমেন্টেশন: [docs/RAG.md](../../docs/RAG.md)
+
+### 7. বাহ্যিক প্রসঙ্গ সংযুক্ত করুন
+
+প্রসঙ্গ প্রোভাইডার বাহ্যিক সিস্টেম (টাস্ক ম্যানেজার, ক্যালেন্ডার, CRM, জ্ঞান ভাণ্ডার) কে এজেন্ট রানটাইমে টুল হিসেবে নিয়ে আসে:
+
+```typescript
+import { connectProvider, contextPrompt } from "./framework/index.js";
+import { createExecuFunctionProvider } from "./providers/execufunction/index.js";
+
+// সংযুক্ত করুন — "context" + "context:execufunction" ট্যাগযুক্ত 17টি টুল নিবন্ধন করে
+const exf = await connectProvider(
+  createExecuFunctionProvider({ token: process.env.EXF_PAT }),
+  registry,
+);
+
+// এজেন্ট সিস্টেম প্রম্পটে সক্রিয় টাস্ক + আসন্ন ইভেন্ট ইনজেক্ট করুন
+const context = await contextPrompt([exf]);
+```
+
+`ContextProvider` ইন্টারফেস প্লাগযোগ্য — যেকোনো ব্যাকএন্ডকে ফ্রেমওয়ার্কে আনতে `metadata`, `connect()`, এবং `createTools()` বাস্তবায়ন করুন। সম্পূর্ণ ইন্টারফেসের জন্য [আর্কিটেকচার](../../docs/ARCHITECTURE.md#context-providers) দেখুন।
+
+| প্রোভাইডার | স্থিতি | ক্ষমতাসমূহ |
+|----------|--------|--------------|
+| [ExecuFunction](../../src/providers/execufunction/) | অন্তর্নির্মিত | টাস্ক, প্রকল্প, ক্যালেন্ডার, জ্ঞান, মানুষ, সংস্থা, কোডবেস |
+| Obsidian | টেমপ্লেট (পরিকল্পিত) | জ্ঞান |
+| Notion | টেমপ্লেট (পরিকল্পিত) | জ্ঞান, টাস্ক, প্রকল্প |
 
 ## কমান্ডসমূহ
 
@@ -193,6 +246,7 @@ npm run dev                 # ডেভ মোড — সেভ করার প
 npm test                    # টুল-সংজ্ঞায়িত স্বয়ংক্রিয় পরীক্ষা চালান
 npm run chat                # আপনার টুল ব্যবহার করে AI এর সাথে চ্যাট করুন
 npm run chat -- gemini      # একটি নির্দিষ্ট প্রোভাইডারকে জোর করুন
+npm run chat -- --no-memory # স্থায়ী মেমরি ছাড়া চ্যাট করুন
 npm run create-tool <name>  # একটি নতুন টুল তৈরি করুন
 npm run docs                # টুল রেফারেন্স ডকুমেন্টেশন তৈরি করুন
 npm run inspect             # MCP ইন্সপেক্টর ওয়েব UI
@@ -253,8 +307,33 @@ defineTool({
 
 ## ডকুমেন্টেশন
 
-- [আর্কিটেকচার](docs/ARCHITECTURE.md): রানটাইম মডেল, ফিল্টার করা রেজিস্ট্রি, সিন্থেটিক টুল এবং এক্সিকিউশন পাথ
-- [RAG](docs/RAG.md): সিমান্টিক চাঙ্কিং, Gemini/OpenAI এম্বেডিং, pgvector স্কিমা, HNSW সার্চ এবং টুল ইন্টিগ্রেশন
+- [আর্কিটেকচার](../../docs/ARCHITECTURE.md): রানটাইম মডেল, ফিল্টার করা রেজিস্ট্রি, সিন্থেটিক টুল এবং এক্সিকিউশন পাথ
+- [RAG](../../docs/RAG.md): সিমান্টিক চাঙ্কিং, Gemini/OpenAI এম্বেডিং, pgvector স্কিমা, HNSW সার্চ এবং টুল ইন্টিগ্রেশন
+
+## প্লাগইন
+
+### OpenClaw-এর জন্য ExecuFunction
+
+[`@openfunctions/openclaw-execufunction`](../../plugins/openclaw-execufunction/) প্লাগইন [ExecuFunction](https://execufunction.com)-কে [OpenClaw](https://github.com/openclaw/openclaw) এজেন্ট ইকোসিস্টেমে নিয়ে আসে — 6টি ডোমেইনে 17টি টুল:
+
+| ডোমেইন | টুলস | এটি কী করে |
+|--------|-------|--------------|
+| টাস্ক | `exf_tasks_list`, `exf_tasks_create`, `exf_tasks_update`, `exf_tasks_complete` | অগ্রাধিকারসহ (do_now/do_next/do_later/delegate/drop) কাঠামোবদ্ধ টাস্ক ম্যানেজমেন্ট |
+| ক্যালেন্ডার | `exf_calendar_list`, `exf_calendar_create`, `exf_calendar_update` | ইভেন্ট সময়সূচি এবং অনুসন্ধান |
+| জ্ঞান | `exf_notes_search`, `exf_notes_create`, `exf_notes_get` | জ্ঞান ভাণ্ডারে সিমান্টিক সার্চ |
+| প্রকল্প | `exf_projects_list`, `exf_projects_context` | প্রকল্পের স্থিতি এবং সম্পূর্ণ প্রসঙ্গ (টাস্ক, নোট, সিগনাল) |
+| মানুষ/CRM | `exf_people_search`, `exf_person_create`, `exf_org_search` | পরিচিতি এবং সংস্থা ম্যানেজমেন্ট |
+| কোডবেস | `exf_codebase_search`, `exf_code_who_knows` | সিমান্টিক কোড সার্চ এবং দক্ষতা ট্র্যাকিং |
+
+ইনস্টল করুন:
+
+```bash
+openclaw plugins install @openfunctions/openclaw-execufunction
+```
+
+আপনার পরিবেশে `EXF_PAT` সেট করুন (বা OpenClaw প্লাগইন সেটিংসের মাধ্যমে কনফিগার করুন), এবং আপনার OpenClaw এজেন্ট পায় স্থায়ী টাস্ক, ক্যালেন্ডার সচেতনতা, সিমান্টিক জ্ঞান সার্চ, CRM, এবং কোড ইন্টেলিজেন্স — ExecuFunction-এর ক্লাউড API দ্বারা সমর্থিত।
+
+বিস্তারিতের জন্য [প্লাগইন README](../../plugins/openclaw-execufunction/) দেখুন।
 
 ## প্রকল্পের কাঠামো
 
@@ -262,9 +341,19 @@ defineTool({
 openFunctions/
 ├── src/
 │   ├── framework/              # মূল রানটাইম + কম্পোজিশন লেয়ার
+│   │   ├── chat-agent.ts       # createChatAgent() — সংযোজনযোগ্য চ্যাট এজেন্ট ফ্যাক্টরি
+│   │   ├── chat-agent-types.ts # ChatAgent, ChatAgentConfig, ChatResult টাইপসমূহ
+│   │   ├── chat-agent-resolve.ts # কনফিগ রেজোলিউশন, প্রোভাইডার অটো-ডিটেকশন
+│   │   ├── chat-agent-http.ts  # agent.serve()-এর জন্য HTTP সার্ভার
+│   │   ├── context.ts          # প্রসঙ্গ প্রোভাইডার ইন্টারফেস
+│   │   └── ...                 # টুল, রেজিস্ট্রি, এজেন্ট, মেমরি, RAG, ওয়ার্কফ্লো
+│   ├── providers/
+│   │   └── execufunction/      # ExecuFunction প্রসঙ্গ প্রোভাইডার (রেফারেন্স ইমপ্লিমেন্টেশন)
 │   ├── examples/               # রেফারেন্স টুল প্যাটার্ন
 │   ├── my-tools/               # আপনার টুলস
 │   └── index.ts                # MCP এন্ট্রি পয়েন্ট
+├── plugins/
+│   └── openclaw-execufunction/ # OpenClaw-এর জন্য ExecuFunction প্লাগইন
 ├── docs/                       # আর্কিটেকচার ডকুমেন্টেশন
 ├── scripts/                    # চ্যাট, টুল তৈরি, ডকুমেন্টেশন
 ├── test-client/                # CLI টেস্টার + টেস্ট রানার
@@ -274,4 +363,4 @@ openFunctions/
 
 ## লাইসেন্স
 
-MIT — দেখুন [LICENSE](LICENSE)
+MIT — দেখুন [LICENSE](../../LICENSE)

@@ -1,4 +1,4 @@
-[English](../README.md) | [French](README.fr.md)
+[English](../../README.md) | [Français](README.fr.md)
 
 <p align="center">
   <img src="../../assets/logo.svg" alt="openFunctions" width="600">
@@ -9,13 +9,13 @@
 </p>
 
 <p align="center">
-  <a href="#quick-start">Démarrage Rapide</a> &middot;
-  <a href="#the-mental-model">Modèle Mental</a> &middot;
-  <a href="#choose-the-right-primitive">Choisir la Bonne Primitive</a> &middot;
-  <a href="#capability-ladder">Échelle des Capacités</a> &middot;
-  <a href="#providers">Fournisseurs</a> &middot;
-  <a href="#examples">Exemples</a> &middot;
-  <a href="#docs">Documentation</a>
+  <a href="#démarrage-rapide">Démarrage Rapide</a> &middot;
+  <a href="#le-modèle-mental">Modèle Mental</a> &middot;
+  <a href="#choisir-la-bonne-primitive">Choisir la Bonne Primitive</a> &middot;
+  <a href="#échelle-des-capacités">Échelle des Capacités</a> &middot;
+  <a href="#fournisseurs">Fournisseurs</a> &middot;
+  <a href="#exemples">Exemples</a> &middot;
+  <a href="#documentation">Documentation</a>
 </p>
 
 ---
@@ -35,9 +35,9 @@ Si vous comprenez le runtime des outils, le reste du framework reste lisible.
 
 ```text
 defineTool() -> registry.register() -> adapter/server executes tool
-                                    -> workflows compose tools
-                                    -> agents use filtered tools
-                                    -> memory/rag expose more tools
+                                    -> workflows compose tools // les workflows composent les outils
+                                    -> agents use filtered tools // les agents utilisent des outils filtrés
+                                    -> memory/rag expose more tools // memory/rag expose plus d'outils
 ```
 
 ## Démarrage Rapide
@@ -61,11 +61,11 @@ import { defineTool, ok } from "../framework/index.js";
 
 export const rollDice = defineTool({
   name: "roll_dice",
-  description: "Lance un dé avec le nombre de faces donné",
+  description: "Roll a dice with the given number of sides", // Lance un dé avec le nombre de faces donné
   inputSchema: {
     type: "object",
     properties: {
-      sides: { type: "number", description: "Nombre de faces (par défaut 6)" },
+      sides: { type: "number", description: "Number of sides (default 6)" }, // Nombre de faces (par défaut 6)
     },
   },
   handler: async ({ sides }) => {
@@ -83,26 +83,30 @@ Cette définition unique peut être :
 - composée en workflows
 - filtrée dans des registres spécifiques aux agents
 
-En savoir plus : [Architecture](docs/ARCHITECTURE.md)
+En savoir plus : [Architecture](../../docs/ARCHITECTURE.md)
 
 ## Choisir la Bonne Primitive
 
 | Utilisez ceci | Lorsque vous voulez | Ce que c'est réellement |
 |---------------|--------------------|-------------------------|
 | `defineTool()` | une logique métier appelable par l'IA | la primitive principale |
+| `createChatAgent()` | un agent IA composable et intégrable | outils + mémoire + contexte + adaptateur en une seule configuration |
 | `pipe()` | une orchestration déterministe | un pipeline outil/LLM piloté par le code |
 | `defineAgent()` | une utilisation adaptative d'outils en plusieurs étapes | une boucle LLM sur un registre filtré |
 | `createConversationMemory()` / `createFactMemory()` | l'état du fil de discussion/des faits | la persistance plus les outils de mémoire |
 | `createRAG()` | la récupération sémantique de documents | pgvector + embeddings + outils |
+| `connectProvider()` | le contexte de systèmes externes | outils structurés depuis ExecuFunction, Obsidian, etc. |
 | `createStore()` / `createPgStore()` | la persistance | une couche de stockage, pas de récupération |
 
 Règle générale :
 
 - Commencez par un outil.
+- Utilisez `createChatAgent()` lorsque vous voulez un agent complet avec mémoire et contexte.
 - Utilisez un workflow lorsque vous connaissez la séquence.
-- N'utilisez un agent que lorsque le modèle doit choisir la prochaine action.
+- Utilisez `defineAgent()` lorsque vous avez besoin d'agents spécialisés au sein d'équipes.
 - Ajoutez de la mémoire pour l'état que vous contrôlez.
 - Ajoutez RAG pour la récupération de documents par signification.
+- Ajoutez un fournisseur de contexte lorsque vous avez besoin de systèmes externes (tâches, calendriers, CRM).
 
 ## Échelle des Capacités
 
@@ -142,24 +146,47 @@ const research = pipe(toolStep(registry, "define_word"))
 await research.run({ word: "ephemeral" });
 ```
 
-### 4. Ajouter un comportement adaptatif avec des agents
+### 4. Construire un agent de chat
 
-Les agents utilisent les mêmes outils, mais via un registre filtré et une boucle de raisonnement :
+`createChatAgent()` compose outils, mémoire, fournisseurs de contexte et adaptateur IA en un seul agent intégrable :
+
+```typescript
+import { createChatAgent } from "./framework/index.js";
+
+const agent = await createChatAgent({
+  provider: "gemini",
+  preset: "study-buddy",
+  memory: true,                    // mémoire de conversation + faits (activée par défaut)
+  providers: ["execufunction"],    // connecter le contexte externe
+});
+
+// Utilisez-le de quatre façons :
+await agent.interactive();                          // CLI
+const result = await agent.chat("Create a task");   // programmatique
+for await (const chunk of agent.chat("hello", { stream: true })) { ... }  // streaming
+await agent.serve({ port: 3000 });                  // serveur HTTP
+```
+
+La même configuration fonctionne depuis le code, les options CLI ou les fichiers YAML. La mémoire est activée par défaut : l'agent se souvient d'une session à l'autre.
+
+### 5. Ajouter un comportement adaptatif avec des agents
+
+`defineAgent()` est conçu pour les agents spécialisés au sein d'équipes et de workflows : registres filtrés et boucles de raisonnement :
 
 ```typescript
 import { defineAgent } from "./framework/index.js";
 
 const researcher = defineAgent({
   name: "researcher",
-  role: "Analyste de recherche",
-  goal: "Trouver des informations précises en utilisant les outils disponibles",
+  role: "Research Analyst", // Analyste de recherche
+  goal: "Find accurate information using available tools", // Trouver des informations précises en utilisant les outils disponibles
   toolTags: ["search"],
 });
 ```
 
 Utilisez des équipes (crews) lorsque plusieurs agents spécialisés doivent collaborer.
 
-### 5. Ajouter l'état uniquement lorsque nécessaire
+### 6. Ajouter l'état uniquement lorsque nécessaire
 
 Persistance :
 
@@ -183,7 +210,33 @@ const rag = await createRAG({ embeddingProvider: "gemini" });
 registry.registerAll(rag.createTools());
 ```
 
-Documentation RAG : [docs/RAG.md](docs/RAG.md)
+Documentation RAG : [docs/RAG.md](../../docs/RAG.md)
+
+### 7. Connecter le contexte externe
+
+Les fournisseurs de contexte intègrent des systèmes externes (gestionnaires de tâches, calendriers, CRM, bases de connaissances) au runtime de l'agent sous forme d'outils :
+
+```typescript
+import { connectProvider, contextPrompt } from "./framework/index.js";
+import { createExecuFunctionProvider } from "./providers/execufunction/index.js";
+
+// Connecter — enregistre 17 outils étiquetés "context" + "context:execufunction"
+const exf = await connectProvider(
+  createExecuFunctionProvider({ token: process.env.EXF_PAT }),
+  registry,
+);
+
+// Injecter les tâches actives + événements à venir dans les prompts système de l'agent
+const context = await contextPrompt([exf]);
+```
+
+L'interface `ContextProvider` est extensible : implémentez `metadata`, `connect()` et `createTools()` pour intégrer n'importe quel backend au framework. Voir [Architecture](../../docs/ARCHITECTURE.md#context-providers) pour l'interface complète.
+
+| Fournisseur | Statut | Capacités |
+|-------------|--------|-----------|
+| [ExecuFunction](../../src/providers/execufunction/) | Intégré | tâches, projets, calendrier, connaissances, personnes, organisations, code |
+| Obsidian | Modèle (prévu) | connaissances |
+| Notion | Modèle (prévu) | connaissances, tâches, projets |
 
 ## Commandes
 
@@ -193,6 +246,7 @@ npm run dev                 # Mode dev — redémarre automatiquement à la sauv
 npm test                    # Exécute les tests automatisés définis par l'outil
 npm run chat                # Discutez avec l'IA en utilisant vos outils
 npm run chat -- gemini      # Force un fournisseur spécifique
+npm run chat -- --no-memory # Chat sans mémoire persistante
 npm run create-tool <name>  # Génère un nouvel outil
 npm run docs                # Génère la documentation de référence des outils
 npm run inspect             # Interface web de l'inspecteur MCP
@@ -229,8 +283,8 @@ defineTool({
   name: "create_task",
   // ...
   tests: [
-    { name: "crée une tâche", input: { title: "Read ch5", subject: "Bio" }, expect: { success: true } },
-    { name: "échoue sans sujet", input: { title: "Read ch5" }, expect: { success: false } },
+    { name: "creates a task", input: { title: "Read ch5", subject: "Bio" }, expect: { success: true } }, // crée une tâche
+    { name: "fails without subject", input: { title: "Read ch5" }, expect: { success: false } }, // échoue sans sujet
   ],
 });
 ```
@@ -253,8 +307,33 @@ Le registre valide les paramètres avant l'exécution des gestionnaires, de sort
 
 ## Documentation
 
-- [Architecture](docs/ARCHITECTURE.md) : le modèle d'exécution, les registres filtrés, les outils synthétiques et les chemins d'exécution
-- [RAG](docs/RAG.md) : découpage sémantique, embeddings Gemini/OpenAI, schéma pgvector, recherche HNSW et intégration d'outils
+- [Architecture](../../docs/ARCHITECTURE.md) : le modèle d'exécution, les registres filtrés, les outils synthétiques et les chemins d'exécution
+- [RAG](../../docs/RAG.md) : découpage sémantique, embeddings Gemini/OpenAI, schéma pgvector, recherche HNSW et intégration d'outils
+
+## Plugins
+
+### ExecuFunction pour OpenClaw
+
+Le plugin [`@openfunctions/openclaw-execufunction`](../../plugins/openclaw-execufunction/) intègre [ExecuFunction](https://execufunction.com) dans l'écosystème d'agents [OpenClaw](https://github.com/openclaw/openclaw) — 17 outils répartis sur 6 domaines :
+
+| Domaine | Outils | Ce qu'il fait |
+|---------|--------|---------------|
+| Tâches | `exf_tasks_list`, `exf_tasks_create`, `exf_tasks_update`, `exf_tasks_complete` | Gestion structurée des tâches avec priorités (do_now/do_next/do_later/delegate/drop) |
+| Calendrier | `exf_calendar_list`, `exf_calendar_create`, `exf_calendar_update` | Planification et consultation d'événements |
+| Connaissances | `exf_notes_search`, `exf_notes_create`, `exf_notes_get` | Recherche sémantique dans une base de connaissances |
+| Projets | `exf_projects_list`, `exf_projects_context` | Statut du projet et contexte complet (tâches, notes, signaux) |
+| Personnes/CRM | `exf_people_search`, `exf_person_create`, `exf_org_search` | Gestion des contacts et des organisations |
+| Code | `exf_codebase_search`, `exf_code_who_knows` | Recherche sémantique de code et suivi d'expertise |
+
+Installation :
+
+```bash
+openclaw plugins install @openfunctions/openclaw-execufunction
+```
+
+Définissez `EXF_PAT` dans votre environnement (ou configurez via les paramètres du plugin OpenClaw), et votre agent OpenClaw obtient des tâches persistantes, la connaissance du calendrier, la recherche sémantique de connaissances, le CRM et l'intelligence de code, le tout alimenté par l'API cloud d'ExecuFunction.
+
+Voir le [README du plugin](../../plugins/openclaw-execufunction/) pour les détails.
 
 ## Structure du Projet
 
@@ -262,9 +341,19 @@ Le registre valide les paramètres avant l'exécution des gestionnaires, de sort
 openFunctions/
 ├── src/
 │   ├── framework/              # Runtime principal + couches de composition
+│   │   ├── chat-agent.ts       # createChatAgent() — fabrique d'agents de chat composables
+│   │   ├── chat-agent-types.ts # Types ChatAgent, ChatAgentConfig, ChatResult
+│   │   ├── chat-agent-resolve.ts # Résolution de configuration, détection auto du fournisseur
+│   │   ├── chat-agent-http.ts  # Serveur HTTP pour agent.serve()
+│   │   ├── context.ts          # Interface des fournisseurs de contexte
+│   │   └── ...                 # tool, registry, agents, memory, rag, workflows
+│   ├── providers/
+│   │   └── execufunction/      # Fournisseur de contexte ExecuFunction (implémentation de référence)
 │   ├── examples/               # Modèles d'outils de référence
 │   ├── my-tools/               # Vos outils
 │   └── index.ts                # Point d'entrée MCP
+├── plugins/
+│   └── openclaw-execufunction/ # Plugin ExecuFunction pour OpenClaw
 ├── docs/                       # Documentation d'architecture
 ├── scripts/                    # chat, create-tool, docs
 ├── test-client/                # Testeur CLI + exécuteur de tests
@@ -274,4 +363,4 @@ openFunctions/
 
 ## Licence
 
-MIT — voir [LICENSE](LICENSE)
+MIT — voir [LICENSE](../../LICENSE)
