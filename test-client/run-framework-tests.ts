@@ -656,6 +656,46 @@ test("chat-agent: streaming adapter error rolls back history", async () => {
   assert.equal(agent.getHistory().length, 0);
 });
 
+test("chat-agent: empty model response surfaces a meaningful placeholder", async () => {
+  // Model returns neither toolCall nor text — old code returned text:""
+  // silently; new code returns "(empty response from model)".
+  const adapter = mockAdapter([{}]);
+  const agent = await createChatAgent({ adapter, memory: false });
+
+  const result = await agent.chat("hi");
+  assert.equal(result.text, "(empty response from model)");
+});
+
+test("chat-agent: synthetic placeholders not persisted to long-term memory", async () => {
+  const adapter = mockAdapter([{}]);
+  const conversationStore = createStore<any>(uniqueStoreName());
+  const factStore = createStore<any>(uniqueStoreName());
+  try {
+    const agent = await createChatAgent({
+      adapter,
+      memory: { conversationStore, factStore, threadId: "test-thread" },
+    });
+    const result = await agent.chat("hi");
+    assert.equal(result.text, "(empty response from model)");
+
+    // The user message should be persisted, but the synthetic
+    // assistant placeholder should NOT be — otherwise the model
+    // would see its own placeholder on the next call and might mimic.
+    const thread = conversationStore.get("test-thread") as
+      | { messages: Array<{ role: string; content: string }> }
+      | undefined;
+    assert.ok(thread, "thread should exist");
+    const assistantMsgs = thread!.messages.filter((m) => m.role === "assistant");
+    assert.equal(
+      assistantMsgs.length,
+      0,
+      "no synthetic assistant turn should be persisted",
+    );
+  } finally {
+    // Best-effort cleanup — store names are unique per test
+  }
+});
+
 // ─────────────────────────────────────────────────────────────────────────
 // Custom runner — uses node:test programmatically so we can exit non-zero
 // on failure without a separate CLI flag.

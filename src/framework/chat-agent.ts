@@ -224,6 +224,10 @@ class ChatAgentImpl implements ChatAgent {
     let rounds = 0;
     let maxRounds = this.maxToolRounds;
     let finalText = "";
+    // Track whether the model produced a real assistant turn. Used so
+    // we don't persist synthetic placeholders ("exceeded max rounds",
+    // "empty response") to long-term conversation memory.
+    let assistantTurnComplete = false;
 
     try {
       while (maxRounds-- > 0) {
@@ -273,6 +277,7 @@ class ChatAgentImpl implements ChatAgent {
         if (response.text) {
           finalText = response.text;
           this.history.push({ role: "assistant", content: response.text });
+          assistantTurnComplete = true;
         }
 
         break;
@@ -282,12 +287,18 @@ class ChatAgentImpl implements ChatAgent {
       throw error;
     }
 
-    if (!finalText && maxRounds < 0) {
-      finalText = "(exceeded max tool calling rounds)";
+    if (!finalText) {
+      finalText =
+        maxRounds < 0
+          ? "(exceeded max tool calling rounds)"
+          : "(empty response from model)";
     }
 
-    // Persist assistant response to memory
-    if (this.conversationMemory && finalText) {
+    // Persist only real assistant turns to long-term memory. Synthetic
+    // placeholders would otherwise pollute future calls — the model
+    // would see its own "exceeded max rounds" string in history and
+    // potentially mimic it.
+    if (this.conversationMemory && assistantTurnComplete) {
       this.conversationMemory.addMessage(currentThreadId, {
         role: "assistant",
         content: finalText,
@@ -331,6 +342,7 @@ class ChatAgentImpl implements ChatAgent {
     let rounds = 0;
     let maxRounds = this.maxToolRounds;
     let finalText = "";
+    let assistantTurnComplete = false;
 
     try {
       while (maxRounds-- > 0) {
@@ -388,6 +400,7 @@ class ChatAgentImpl implements ChatAgent {
         if (response.text) {
           finalText = response.text;
           this.history.push({ role: "assistant", content: response.text });
+          assistantTurnComplete = true;
           yield { type: "text", text: response.text };
         }
 
@@ -398,12 +411,16 @@ class ChatAgentImpl implements ChatAgent {
       throw error;
     }
 
-    if (!finalText && maxRounds < 0) {
-      finalText = "(exceeded max tool calling rounds)";
+    if (!finalText) {
+      finalText =
+        maxRounds < 0
+          ? "(exceeded max tool calling rounds)"
+          : "(empty response from model)";
       yield { type: "text", text: finalText };
     }
 
-    if (this.conversationMemory && finalText) {
+    // Synthetic placeholders are not persisted (see chatAsync).
+    if (this.conversationMemory && assistantTurnComplete) {
       this.conversationMemory.addMessage(currentThreadId, {
         role: "assistant",
         content: finalText,
