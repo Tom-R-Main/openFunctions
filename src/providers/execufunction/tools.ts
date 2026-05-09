@@ -394,3 +394,137 @@ export function createCodebaseTools(client: ExfClient): ToolDefinition<any, any>
     }),
   ];
 }
+
+// ─── Work Items ─────────────────────────────────────────────────────────────
+//
+// Work items are Siftable's executable agent work queue: discrete units
+// of work that can be claimed by an agent alias, transitioned through
+// states (started → done / blocked / failed), and tracked separately
+// from human-planning tasks. The old custom client didn't expose these;
+// we reach them via client.raw() (the underlying SiftClient).
+
+export function createWorkItemTools(client: ExfClient): ToolDefinition<any, any>[] {
+  const sift = client.raw();
+
+  return [
+    defineTool<{
+      status?: string;
+      assignedAlias?: string;
+      projectId?: string;
+      taskId?: string;
+      limit?: number;
+    }>({
+      name: "exf_work_items_list",
+      description:
+        "List work items from Siftable's executable agent work queue. " +
+        "Filter by status (pending/in_progress/done/blocked/failed), assigned " +
+        "agent alias, project, or task. Returns work-item titles, statuses, " +
+        "and current assignees.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          status: { type: "string", description: "Filter by status" },
+          assignedAlias: {
+            type: "string",
+            description: "Filter by agent alias (e.g. 'claude-code')",
+          },
+          projectId: { type: "string", description: "Filter by project ID" },
+          taskId: { type: "string", description: "Filter by parent task ID" },
+          limit: { type: "integer", description: "Max work items to return (default 20)" },
+        },
+      },
+      tags: ["work_items"],
+      handler: async (params) => {
+        const res = await sift.listWorkItems(params);
+        if (res.error || !res.data) {
+          return err(`listWorkItems failed (${res.statusCode}): ${res.error}`);
+        }
+        return ok(res.data, `Found ${res.data.workItems.length} work item(s)`);
+      },
+    }),
+
+    defineTool<{ workItemId: string }>({
+      name: "exf_work_item_get",
+      description:
+        "Get a single work item by ID. Returns the full work-item record " +
+        "including status, assignment, and any progress notes.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          workItemId: { type: "string", description: "Work item ID" },
+        },
+        required: ["workItemId"],
+      },
+      tags: ["work_items"],
+      handler: async ({ workItemId }) => {
+        const res = await sift.getWorkItem(workItemId);
+        if (res.error || !res.data) {
+          return err(`getWorkItem failed (${res.statusCode}): ${res.error}`);
+        }
+        return ok(res.data);
+      },
+    }),
+
+    defineTool<{ alias: string; preferredTaskId?: string }>({
+      name: "exf_work_item_claim",
+      description:
+        "Claim the next available work item for an agent alias. Optionally " +
+        "prefer a specific task. Returns the claimed work item, or empty if " +
+        "none are available.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          alias: {
+            type: "string",
+            description: "Agent alias claiming the work (e.g. 'claude-code')",
+          },
+          preferredTaskId: {
+            type: "string",
+            description: "Optional preferred task ID to look for first",
+          },
+        },
+        required: ["alias"],
+      },
+      tags: ["work_items"],
+      handler: async ({ alias, preferredTaskId }) => {
+        const input: Record<string, unknown> = { alias };
+        if (preferredTaskId) input.preferredTaskId = preferredTaskId;
+        const res = await sift.claimWorkItem(input);
+        if (res.error || !res.data) {
+          return err(`claimWorkItem failed (${res.statusCode}): ${res.error}`);
+        }
+        return ok(res.data, `Claimed work item for ${alias}`);
+      },
+    }),
+
+    defineTool<{ workItemId: string; action: string; notes?: string }>({
+      name: "exf_work_item_transition",
+      description:
+        "Transition a work item to a new state. Common actions: 'start', " +
+        "'complete', 'block', 'fail'. Pass optional notes to record progress " +
+        "or the reason for blocking/failing.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          workItemId: { type: "string", description: "Work item ID" },
+          action: {
+            type: "string",
+            description: "State transition action: start, complete, block, fail",
+          },
+          notes: { type: "string", description: "Optional notes about the transition" },
+        },
+        required: ["workItemId", "action"],
+      },
+      tags: ["work_items"],
+      handler: async ({ workItemId, action, notes }) => {
+        const input: Record<string, unknown> = {};
+        if (notes) input.notes = notes;
+        const res = await sift.transitionWorkItem(workItemId, action, input);
+        if (res.error || !res.data) {
+          return err(`transitionWorkItem failed (${res.statusCode}): ${res.error}`);
+        }
+        return ok(res.data, `Work item transitioned: ${action}`);
+      },
+    }),
+  ];
+}

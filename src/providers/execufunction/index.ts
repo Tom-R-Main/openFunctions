@@ -37,6 +37,7 @@ import {
   createProjectTools,
   createPeopleTools,
   createCodebaseTools,
+  createWorkItemTools,
 } from "./tools.js";
 
 // ─── Options ────────────────────────────────────────────────────────────────
@@ -128,6 +129,7 @@ export function createSiftableProvider(
             ...createProjectTools(client),
             ...createPeopleTools(client),
             ...createCodebaseTools(client),
+            ...createWorkItemTools(client),
           ];
         },
 
