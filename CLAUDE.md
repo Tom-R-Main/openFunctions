@@ -39,10 +39,13 @@ src/
     index.ts         # Add tools to the myTools array
   index.ts           # Entry point — registers all tools, starts MCP server
 test-client/
-  cli.ts             # Interactive CLI for testing tools
-gemini-bridge/
-  bridge.ts          # Converts tools → Gemini function calling format
-  test-with-gemini.ts# Chat with Gemini using your tools
+  cli.ts                  # Interactive CLI for testing tools (npm run test-tools)
+  run-tests.ts            # Tool-test runner — runs `tests` arrays on tool defs
+  run-framework-tests.ts  # Framework unit tests via node:test (zero deps)
+scripts/
+  chat.ts            # Multi-provider chat (Claude, Gemini, OpenAI, xAI)
+  create-tool.ts     # Scaffold a new tool
+  generate-docs.ts   # Generate tool docs
 ```
 
 ## How to Define a Tool
