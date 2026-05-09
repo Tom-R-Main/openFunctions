@@ -6,6 +6,7 @@
  */
 
 import { readFileSync, existsSync } from "node:fs";
+import { resolve as resolvePath } from "node:path";
 import type { AIAdapter, AdapterConfig } from "./adapters/types.js";
 import { createGeminiAdapter } from "./adapters/gemini.js";
 import { createOpenAIAdapter, createOpenRouterAdapter } from "./adapters/openai.js";
@@ -130,9 +131,16 @@ export function resolveSystemPrompt(
     basePrompt = loadPromptPreset(config.preset, registry);
   } else if (config.prompt) {
     if (typeof config.prompt === "string") {
-      // Check if it's a markdown file path
-      if (config.prompt.endsWith(".md") && existsSync(config.prompt)) {
-        let content = readFileSync(config.prompt, "utf-8");
+      // SECURITY: config.prompt is a developer-supplied string. We treat
+      // a value ending in ".md" as a filesystem path to read. This branch
+      // is intentionally dev-only — do NOT wire it to untrusted input
+      // (HTTP body, query string, YAML from outside the repo). Resolving
+      // to absolute up-front so that error messages are unambiguous.
+      const candidatePath = config.prompt.endsWith(".md")
+        ? resolvePath(config.prompt)
+        : null;
+      if (candidatePath && existsSync(candidatePath)) {
+        let content = readFileSync(candidatePath, "utf-8");
         // Strip YAML frontmatter
         if (content.startsWith("---")) {
           const endIdx = content.indexOf("---", 3);

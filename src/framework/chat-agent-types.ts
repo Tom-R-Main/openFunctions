@@ -196,6 +196,19 @@ export interface ChatAgent {
   /** Clear conversation history and start a new thread */
   reset(): void;
 
+  /**
+   * List all persisted thread IDs known to conversation memory.
+   * Returns an empty array when memory is disabled.
+   */
+  listThreads(): string[];
+
+  /**
+   * Delete a persisted thread from conversation memory. Returns true
+   * when the thread existed and was removed, false otherwise (or when
+   * memory is disabled).
+   */
+  deleteThread(threadId: string): boolean;
+
   /** Shut down — disconnect providers, clean up */
   destroy(): Promise<void>;
 }

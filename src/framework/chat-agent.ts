@@ -597,6 +597,21 @@ class ChatAgentImpl implements ChatAgent {
     this.threadId = randomUUID();
   }
 
+  listThreads(): string[] {
+    return this.conversationMemory?.listThreads() ?? [];
+  }
+
+  deleteThread(threadId: string): boolean {
+    if (!this.conversationMemory) return false;
+    const removed = this.conversationMemory.deleteThread(threadId);
+    // If we just deleted the active thread, start a fresh in-memory state.
+    if (removed && threadId === this.threadId) {
+      this.history = [];
+      this.threadId = randomUUID();
+    }
+    return removed;
+  }
+
   async destroy(): Promise<void> {
     for (const provider of this.connectedProviders) {
       try {

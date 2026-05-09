@@ -883,6 +883,35 @@ test("chat-agent: empty model response surfaces a meaningful placeholder", async
   assert.equal(result.text, "(empty response from model)");
 });
 
+test("chat-agent: listThreads + deleteThread round-trip persisted threads", async () => {
+  const conversationStore = createStore<any>(uniqueStoreName());
+  const factStore = createStore<any>(uniqueStoreName());
+  const adapter = mockAdapter([{ text: "ok" }, { text: "ok" }]);
+  const agent = await createChatAgent({
+    adapter,
+    memory: { conversationStore, factStore, threadId: "alpha" },
+  });
+
+  await agent.chat("hi", { threadId: "alpha" });
+  await agent.chat("hi", { threadId: "beta" });
+
+  const threads = agent.listThreads().sort();
+  assert.deepEqual(threads, ["alpha", "beta"]);
+
+  // Delete a non-active thread
+  assert.equal(agent.deleteThread("alpha"), true);
+  assert.deepEqual(agent.listThreads(), ["beta"]);
+
+  // Delete the active thread — agent should rotate to a fresh thread
+  const activeBefore = "beta";
+  assert.equal(agent.deleteThread(activeBefore), true);
+  assert.equal(agent.getHistory().length, 0);
+  assert.deepEqual(agent.listThreads(), []);
+
+  // Deleting a missing thread returns false
+  assert.equal(agent.deleteThread("never-existed"), false);
+});
+
 test("chat-agent: switching threadId rehydrates history from memory", async () => {
   // Persist a fake conversation under "thread-A".
   const conversationStore = createStore<any>(uniqueStoreName());
