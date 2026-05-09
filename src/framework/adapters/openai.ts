@@ -20,7 +20,12 @@ export function createOpenAIAdapter(config?: Partial<AdapterConfig>): AIAdapter 
     );
   }
 
-  const model = config?.model ?? "gpt-5.4";
+  // Default to gpt-5.5 (released 2026-04-23). Per OpenAI's "Using GPT-5.5"
+  // guide, treat it as a new model family — defaults to medium reasoning
+  // effort and tends to produce more concise, efficient output. Override
+  // via config.model (e.g. "gpt-5.5-2026-04-23" for a pinned version, or
+  // an earlier model like "gpt-5.4" for back-compat).
+  const model = config?.model ?? "gpt-5.5";
   const systemPrompt = config?.systemPrompt ?? "You are a helpful assistant with access to tools. Use tools when they're relevant.";
   let previousResponseId: string | undefined;
 
@@ -29,6 +34,12 @@ export function createOpenAIAdapter(config?: Partial<AdapterConfig>): AIAdapter 
     model,
 
     async chat(messages: ChatMessage[], registry: ToolRegistry, options?: ChatOptions): Promise<AdapterResponse> {
+      // resetSession: caller is starting a new logical conversation
+      // (e.g. a different agent in a crew). Clear the cached id so we
+      // don't thread the new turn onto a prior session.
+      if (options?.resetSession) {
+        previousResponseId = undefined;
+      }
       let input: any;
       // oneShot calls don't participate in session continuity at all.
       const useSession = previousResponseId && !options?.oneShot;

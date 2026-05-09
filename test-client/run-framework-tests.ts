@@ -753,6 +753,51 @@ test("openai Responses adapter: keeps previous_response_id on user follow-up", a
   });
 });
 
+test("openai Responses adapter: resetSession clears state then writes fresh", async () => {
+  // First call → caches "session_a"
+  // Second call (resetSession) → must NOT use session_a; new id "session_b"
+  //   gets written for subsequent calls
+  // Third call → must thread on top of session_b, not session_a
+  await withFetchMock(
+    [
+      { ...RESPONSES_OK, id: "session_a" },
+      { ...RESPONSES_OK, id: "session_b" },
+      { ...RESPONSES_OK, id: "session_c" },
+    ],
+    async (calls) => {
+      const adapter = createOpenAIAdapter({ apiKey: "test-key" });
+      const registry = new ToolRegistry();
+
+      await adapter.chat([{ role: "user", content: "first" }], registry);
+      await adapter.chat(
+        [{ role: "user", content: "fresh start" }],
+        registry,
+        { resetSession: true },
+      );
+      await adapter.chat(
+        [
+          { role: "user", content: "fresh start" },
+          { role: "assistant", content: "ok" },
+          { role: "user", content: "follow up" },
+        ],
+        registry,
+      );
+
+      assert.equal(calls[0].previous_response_id, undefined);
+      assert.equal(
+        calls[1].previous_response_id,
+        undefined,
+        "resetSession must wipe the cached id before this call",
+      );
+      assert.equal(
+        calls[2].previous_response_id,
+        "session_b",
+        "subsequent calls must thread on top of the post-reset id",
+      );
+    },
+  );
+});
+
 test("openai Responses adapter: oneShot calls do not pollute session state", async () => {
   // First call → returns id "session_1"
   // Second call (oneShot) → returns id "extraction_77"; must NOT update state

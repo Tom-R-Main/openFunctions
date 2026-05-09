@@ -264,7 +264,7 @@ Set one API key in `.env` and the chat loop will auto-detect the provider.
 | Provider | Default Model | API |
 |----------|---------------|-----|
 | Gemini | `gemini-3-flash-preview` | Function calling |
-| OpenAI | `gpt-5.4` | Responses API |
+| OpenAI | `gpt-5.5` | Responses API |
 | Anthropic | `claude-sonnet-4-6` | Messages + tool_use |
 | xAI | `grok-4.20-0309-reasoning` | Responses API |
 | OpenRouter | `google/gemini-3-flash-preview` | OpenAI-compatible |
@@ -274,7 +274,7 @@ Examples:
 ```bash
 npm run chat
 npm run chat -- gemini
-npm run chat -- openai gpt-5.4-pro
+npm run chat -- openai gpt-5.5
 npm run chat -- gemini --prompt study-buddy
 ```
 

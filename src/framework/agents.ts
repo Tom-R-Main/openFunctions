@@ -153,7 +153,13 @@ export function defineAgent(definition: AgentDefinition): Agent {
         const response = await adapter.chat(
           messages,
           agentRegistry,
-          { systemPrompt },
+          {
+            systemPrompt,
+            // First call of this agent — reset stateful adapter session
+            // so we don't thread onto another agent's prior conversation
+            // when the same adapter is shared across a crew.
+            resetSession: rounds === 1,
+          },
         );
 
         if (response.toolCall) {

@@ -31,6 +31,11 @@ export function createXAIAdapter(config?: Partial<AdapterConfig>): AIAdapter {
       // Build input for xAI Responses API
       let input: any;
 
+      // resetSession: caller is starting a new logical conversation.
+      // See openai.ts for the same fix.
+      if (options?.resetSession) {
+        previousResponseId = undefined;
+      }
       // oneShot calls don't participate in session continuity at all.
       const useSession = previousResponseId && !options?.oneShot;
 

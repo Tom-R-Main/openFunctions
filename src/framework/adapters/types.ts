@@ -57,6 +57,15 @@ export interface ChatOptions {
    * get polluted by the surrounding conversation on the same adapter.
    */
   oneShot?: boolean;
+  /**
+   * Reset the adapter's stateful session before this call, then proceed
+   * normally (the new response id IS saved for subsequent calls). Use
+   * this on the first call of a logically separate conversation so
+   * stateful adapters (OpenAI/xAI Responses API) don't accidentally
+   * thread the new conversation onto whatever was cached. Different
+   * from oneShot, which skips state entirely.
+   */
+  resetSession?: boolean;
 }
 
 /** An AI provider adapter */

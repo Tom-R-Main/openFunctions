@@ -58,7 +58,7 @@ export interface ChatAgentConfig {
   /** AI provider: "gemini", "openai", "anthropic", "xai", "openrouter" */
   provider?: string;
 
-  /** Model override (e.g., "gemini-2.5-flash", "gpt-5.4-pro") */
+  /** Model override (e.g., "gemini-2.5-flash", "gpt-5.5", "gpt-5.5-2026-04-23") */
   model?: string;
 
   /**
