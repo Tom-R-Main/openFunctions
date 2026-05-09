@@ -193,7 +193,9 @@ export async function connectProvider(
     ]),
   }));
 
-  registry.registerAll(taggedTools);
+  // User tools win on name collision — provider tools should not silently
+  // shadow them. Skip and warn instead of overwrite.
+  registry.registerAll(taggedTools, { overwrite: false });
 
   console.log(
     `🔗 ${name}: connected (${taggedTools.length} tool${taggedTools.length === 1 ? "" : "s"} registered)`,

@@ -25,9 +25,25 @@ export class ToolRegistry {
 
   // ── Registration ─────────────────────────────────────────────────────────
 
-  /** Register a single tool */
-  register(tool: ToolDefinition<any, any>): void {
+  /**
+   * Register a single tool.
+   *
+   * @param opts.overwrite When false, an existing tool with the same name
+   *   wins — the new tool is skipped and a warning is logged. Used by the
+   *   framework to register memory + context-provider tools without silently
+   *   shadowing user tools of the same name. Default: true (back-compat).
+   */
+  register(
+    tool: ToolDefinition<any, any>,
+    opts: { overwrite?: boolean } = {},
+  ): void {
     if (this.tools.has(tool.name)) {
+      if (opts.overwrite === false) {
+        console.warn(
+          `⚠️  Tool "${tool.name}" is already registered — keeping existing definition (skipping new one).`,
+        );
+        return;
+      }
       console.warn(
         `⚠️  Tool "${tool.name}" is already registered — overwriting.`,
       );
@@ -35,10 +51,13 @@ export class ToolRegistry {
     this.tools.set(tool.name, tool);
   }
 
-  /** Register multiple tools at once */
-  registerAll(tools: ToolDefinition<any, any>[]): void {
+  /** Register multiple tools at once. See register() for opts. */
+  registerAll(
+    tools: ToolDefinition<any, any>[],
+    opts: { overwrite?: boolean } = {},
+  ): void {
     for (const tool of tools) {
-      this.register(tool);
+      this.register(tool, opts);
     }
   }
 

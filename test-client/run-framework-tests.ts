@@ -540,6 +540,33 @@ test("registry: toAnthropicFormat / toGeminiFormat / toOpenAIFormat shape tools 
   assert.equal(oai[0].function.name, "shaped");
 });
 
+test("registry: register with overwrite:false keeps the existing tool", () => {
+  const r = new ToolRegistry();
+  const userTool = defineTool({
+    name: "shared_name",
+    description: "user-defined behavior",
+    inputSchema: { type: "object", properties: {} },
+    handler: async () => ok({ owner: "user" }),
+  });
+  const frameworkTool = defineTool({
+    name: "shared_name",
+    description: "framework-defined behavior",
+    inputSchema: { type: "object", properties: {} },
+    handler: async () => ok({ owner: "framework" }),
+  });
+
+  r.register(userTool);
+  r.register(frameworkTool, { overwrite: false });
+
+  // The user's tool must still win — handler should return owner: "user"
+  const got = r.get("shared_name")!;
+  const result = got.handler({}) as Promise<any>;
+  return result.then((res) => {
+    assert.equal(res.success, true);
+    assert.equal(res.data.owner, "user");
+  });
+});
+
 test("registry: unregister removes the tool and returns existed-flag", () => {
   const r = new ToolRegistry();
   const t = defineTool({

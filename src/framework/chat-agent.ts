@@ -85,8 +85,12 @@ export async function createChatAgent(
     factMemory = createFactMemory(memConfig.factStore);
     threadId = memConfig.threadId ?? randomUUID();
 
-    // Register memory tools into the agent's registry
-    agentRegistry.registerAll(createMemoryTools(conversationMemory, factMemory));
+    // Register memory tools — but never shadow a user tool of the
+    // same name. If the user defined their own store_fact, we keep theirs.
+    agentRegistry.registerAll(
+      createMemoryTools(conversationMemory, factMemory),
+      { overwrite: false },
+    );
   }
 
   // 3. Connect context providers
