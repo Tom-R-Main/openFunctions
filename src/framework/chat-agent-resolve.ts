@@ -79,11 +79,19 @@ export function resolveAdapter(config: ChatAgentConfig, systemPrompt?: string): 
 // ─── Context Provider Resolution ───────────────────────────────────────────
 
 const KNOWN_PROVIDERS: Record<string, () => Promise<ContextProvider>> = {
-  execufunction: async () => {
-    const { createExecuFunctionProvider } = await import(
+  // "siftable" is the current brand; "execufunction" stays as a back-
+  // compat alias so existing configs keep working.
+  siftable: async () => {
+    const { createSiftableProvider } = await import(
       "../providers/execufunction/index.js"
     );
-    return createExecuFunctionProvider();
+    return createSiftableProvider();
+  },
+  execufunction: async () => {
+    const { createSiftableProvider } = await import(
+      "../providers/execufunction/index.js"
+    );
+    return createSiftableProvider();
   },
 };
 

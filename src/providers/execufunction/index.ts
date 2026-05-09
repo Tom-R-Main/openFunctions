@@ -1,21 +1,23 @@
 /**
- * ExecuFunction Context Provider for Open Functions
+ * Siftable Context Provider for openFunctions
  *
- * The reference implementation of the ContextProvider interface.
- * Connects ExecuFunction's cloud API (tasks, calendar, knowledge,
- * projects, CRM, codebase) to the Open Functions agent runtime.
+ * Reference implementation of the ContextProvider interface, built on
+ * the published @siftable/mcp-server SDK. Connects Siftable's cloud
+ * API (tasks, calendar, knowledge, projects, CRM, codebase) to the
+ * openFunctions agent runtime.
+ *
+ * Auth resolution order:
+ *   1. Explicit { token, apiUrl, workspaceId } passed to the factory
+ *   2. SIFT_PAT / SIFT_API_URL / SIFT_WORKSPACE_ID (current branding)
+ *   3. EXF_PAT / EXF_API_URL / EXF_WORKSPACE_ID (legacy fallback)
  *
  * @example
  * ```ts
- * import { registry, connectProvider, contextPrompt, defineAgent } from "./framework/index.js";
- * import { createExecuFunctionProvider } from "./providers/execufunction/index.js";
+ * import { registry, connectProvider, defineAgent } from "./framework/index.js";
+ * import { createSiftableProvider } from "./providers/execufunction/index.js";
  *
- * const exf = await connectProvider(
- *   createExecuFunctionProvider({ token: process.env.EXF_PAT }),
- *   registry,
- * );
+ * const sift = await connectProvider(createSiftableProvider(), registry);
  *
- * // Agent gets 17 ExecuFunction tools + context injection
  * const agent = defineAgent({
  *   name: "assistant",
  *   role: "Personal productivity assistant",
@@ -39,20 +41,23 @@ import {
 
 // ─── Options ────────────────────────────────────────────────────────────────
 
-export interface ExecuFunctionProviderOptions {
-  /** ExecuFunction API base URL (default: https://execufunction.com) */
+export interface SiftableProviderOptions {
+  /** Siftable API base URL (default: https://execufunction.com) */
   apiUrl?: string;
-  /** Personal Access Token. Falls back to EXF_PAT env var. */
+  /** Personal Access Token. Falls back to SIFT_PAT, then EXF_PAT. */
   token?: string;
   /** Workspace ID for multi-workspace accounts */
   workspaceId?: string;
 }
 
+/** @deprecated Use SiftableProviderOptions. Kept for back-compat. */
+export type ExecuFunctionProviderOptions = SiftableProviderOptions;
+
 // ─── Metadata ───────────────────────────────────────────────────────────────
 
 const METADATA: ContextProviderMetadata = {
-  id: "execufunction",
-  name: "ExecuFunction",
+  id: "siftable",
+  name: "Siftable",
   description:
     "Tasks, projects, calendar, knowledge, CRM, and codebase — " +
     "structured cloud context for AI agents",
@@ -67,42 +72,49 @@ const METADATA: ContextProviderMetadata = {
   ],
   auth: {
     kind: "pat",
-    envVar: "EXF_PAT",
+    envVar: "SIFT_PAT",
     setupUrl: "https://execufunction.com/settings/tokens",
-    instructions: "Run 'exf auth login' or set EXF_PAT in your environment",
+    instructions:
+      "Run 'sift auth login' (or set SIFT_PAT). Legacy EXF_PAT also works.",
   },
 };
 
 // ─── Provider Factory ───────────────────────────────────────────────────────
 
 /**
- * Create an ExecuFunction context provider.
+ * Create a Siftable context provider, backed by @siftable/mcp-server.
  *
  * ```ts
- * const provider = createExecuFunctionProvider({ token: "exf_pat_..." });
- * const exf = await connectProvider(provider, registry);
+ * const provider = createSiftableProvider({ token: "sift_pat_..." });
+ * const sift = await connectProvider(provider, registry);
  * ```
  */
-export function createExecuFunctionProvider(
-  options?: ExecuFunctionProviderOptions,
+export function createSiftableProvider(
+  options?: SiftableProviderOptions,
 ): ContextProvider {
   return {
     metadata: METADATA,
 
     async connect(): Promise<ConnectedProvider> {
-      const token = options?.token ?? process.env.EXF_PAT;
+      // Resolve auth in order: explicit option → SIFT_* env → EXF_* env.
+      const token =
+        options?.token ?? process.env.SIFT_PAT ?? process.env.EXF_PAT;
       if (!token) {
         throw new Error(
-          "ExecuFunction requires a Personal Access Token.\n" +
-            "Set EXF_PAT in your environment, or pass { token: '...' } to createExecuFunctionProvider().\n" +
+          "Siftable requires a Personal Access Token.\n" +
+            "Set SIFT_PAT (or legacy EXF_PAT) in your environment, or pass { token: '...' }.\n" +
             "Generate a token at https://execufunction.com/settings/tokens",
         );
       }
 
       const client = new ExfClient({
-        apiUrl: options?.apiUrl ?? process.env.EXF_API_URL,
+        apiUrl:
+          options?.apiUrl ?? process.env.SIFT_API_URL ?? process.env.EXF_API_URL,
         token,
-        workspaceId: options?.workspaceId ?? process.env.EXF_WORKSPACE_ID,
+        workspaceId:
+          options?.workspaceId ??
+          process.env.SIFT_WORKSPACE_ID ??
+          process.env.EXF_WORKSPACE_ID,
       });
 
       return {
@@ -174,7 +186,7 @@ export function createExecuFunctionProvider(
 
           if (sections.length === 0) return undefined;
 
-          return `## Your Current Context (via ExecuFunction)\n\n${sections.join("\n\n")}`;
+          return `## Your Current Context (via Siftable)\n\n${sections.join("\n\n")}`;
         },
 
         async healthCheck() {
@@ -188,9 +200,15 @@ export function createExecuFunctionProvider(
         },
 
         async disconnect() {
-          // ExfClient uses stateless HTTP — nothing to clean up
+          // SiftClient uses stateless HTTP — nothing to clean up
         },
       };
     },
   };
 }
+
+/**
+ * @deprecated Use createSiftableProvider — same factory under the new
+ *   brand. Kept so existing callers keep working without code churn.
+ */
+export const createExecuFunctionProvider = createSiftableProvider;
