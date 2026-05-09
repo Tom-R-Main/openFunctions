@@ -162,8 +162,9 @@ async function runSingleTest(
       }
     }
 
-    // Check expected data fields
-    if (test.expect.data && result.data) {
+    // Check expected data fields. Use !== undefined so falsy-but-valid
+    // results (0, false, "") still get asserted.
+    if (test.expect.data !== undefined && result.data !== undefined) {
       const dataCheck = checkFields(
         test.expect.data,
         result.data as Record<string, unknown>

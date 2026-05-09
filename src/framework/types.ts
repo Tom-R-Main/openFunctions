@@ -10,7 +10,11 @@
 export interface JsonSchemaProperty {
   type: "string" | "number" | "integer" | "boolean" | "array" | "object";
   description?: string;
-  enum?: string[];
+  /**
+   * Allowed values. JSON Schema permits any primitive here, not just
+   * strings — an integer field can legitimately constrain to enum: [1, 2, 3].
+   */
+  enum?: (string | number | boolean)[];
   items?: JsonSchemaProperty;
   properties?: Record<string, JsonSchemaProperty>;
   required?: string[];

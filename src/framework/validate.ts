@@ -86,8 +86,9 @@ function validateField(
     }
   }
 
-  // Enum check
-  if (schema.enum && !schema.enum.includes(value as string)) {
+  // Enum check — JSON Schema enums can hold any primitive (number,
+  // boolean, string), not just strings. Avoid coercing here.
+  if (schema.enum && !schema.enum.includes(value as string | number | boolean)) {
     errors.push({
       field: name,
       message: `"${name}" must be one of: ${schema.enum.join(", ")} — got "${value}"`,

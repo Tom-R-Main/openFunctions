@@ -114,13 +114,20 @@ export function defineAgent(definition: AgentDefinition): Agent {
       // Build a filtered registry for this agent
       const agentRegistry = new ToolRegistry();
       const allTools = registry.getAll();
+      // Treat empty arrays the same as "no filter set" — empty arrays are
+      // truthy in JS, so a previous `!definition.tools && !definition.toolTags`
+      // check would skip the all-tools fallback and an agent declared with
+      // tools: [] silently got zero tools.
+      const hasNameFilter = (definition.tools?.length ?? 0) > 0;
+      const hasTagFilter = (definition.toolTags?.length ?? 0) > 0;
 
       for (const tool of allTools) {
-        const byName = definition.tools?.includes(tool.name);
+        const byName = hasNameFilter && definition.tools!.includes(tool.name);
         const byTag =
-          definition.toolTags?.some((tag) => tool.tags?.includes(tag)) ?? false;
+          hasTagFilter &&
+          definition.toolTags!.some((tag) => tool.tags?.includes(tag));
 
-        if (byName || byTag || (!definition.tools && !definition.toolTags)) {
+        if (byName || byTag || (!hasNameFilter && !hasTagFilter)) {
           agentRegistry.register(tool);
         }
       }

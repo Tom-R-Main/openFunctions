@@ -540,6 +540,35 @@ test("registry: toAnthropicFormat / toGeminiFormat / toOpenAIFormat shape tools 
   assert.equal(oai[0].function.name, "shaped");
 });
 
+test("validate: integer enum accepts the value (number-typed enums)", () => {
+  const errs = validateParams(
+    { difficulty: 2 },
+    {
+      type: "object",
+      properties: {
+        difficulty: { type: "integer", enum: [1, 2, 3] },
+      },
+      required: ["difficulty"],
+    } as InputSchema,
+  );
+  assert.deepEqual(errs, []);
+});
+
+test("validate: integer enum rejects out-of-set values", () => {
+  const errs = validateParams(
+    { difficulty: 5 },
+    {
+      type: "object",
+      properties: {
+        difficulty: { type: "integer", enum: [1, 2, 3] },
+      },
+      required: ["difficulty"],
+    } as InputSchema,
+  );
+  assert.equal(errs.length, 1);
+  assert.match(errs[0].message, /must be one of/);
+});
+
 test("registry: register with overwrite:false keeps the existing tool", () => {
   const r = new ToolRegistry();
   const userTool = defineTool({
