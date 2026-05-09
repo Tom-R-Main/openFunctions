@@ -42,6 +42,16 @@ export class ToolRegistry {
     }
   }
 
+  /**
+   * Remove a tool by name. Returns true if the tool existed and was
+   * removed, false otherwise. Used by ChatAgent.destroy() to clean up
+   * provider/memory tools so long-lived processes that create and
+   * destroy agents don't accumulate ghost tools in shared registries.
+   */
+  unregister(name: string): boolean {
+    return this.tools.delete(name);
+  }
+
   // ── Lookup ───────────────────────────────────────────────────────────────
 
   /** Get a tool by name */

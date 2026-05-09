@@ -540,6 +540,23 @@ test("registry: toAnthropicFormat / toGeminiFormat / toOpenAIFormat shape tools 
   assert.equal(oai[0].function.name, "shaped");
 });
 
+test("registry: unregister removes the tool and returns existed-flag", () => {
+  const r = new ToolRegistry();
+  const t = defineTool({
+    name: "removable",
+    description: "a tool that gets removed",
+    inputSchema: { type: "object", properties: {} },
+    handler: async () => ok({ ran: true }),
+  });
+  r.register(t);
+  assert.equal(r.get("removable")?.name, "removable");
+
+  assert.equal(r.unregister("removable"), true);
+  assert.equal(r.get("removable"), undefined);
+  assert.equal(r.unregister("removable"), false);
+  assert.equal(r.unregister("never_registered"), false);
+});
+
 // ─────────────────────────────────────────────────────────────────────────
 // memory.ts — fact memory ID generation
 // ─────────────────────────────────────────────────────────────────────────

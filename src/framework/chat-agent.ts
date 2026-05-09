@@ -91,14 +91,22 @@ export async function createChatAgent(
 
   // 3. Connect context providers
   const connectedProviders: ConnectedProvider[] = [];
+  // Track which tool names each provider added so destroy() can clean
+  // them out of the registry. Without this, long-lived processes that
+  // create and destroy agents accumulate ghost tools.
+  const providerToolNames: string[] = [];
   let contextBlock: string | undefined;
 
   if (config.providers && config.providers.length > 0) {
     const resolved = await resolveContextProviders(config.providers);
     for (const provider of resolved) {
       try {
+        const before = new Set(agentRegistry.listNames());
         const connected = await connectProvider(provider, agentRegistry);
         connectedProviders.push(connected);
+        for (const name of agentRegistry.listNames()) {
+          if (!before.has(name)) providerToolNames.push(name);
+        }
       } catch (error) {
         const name = provider.metadata.name;
         const msg = error instanceof Error ? error.message : "unknown error";
@@ -136,6 +144,7 @@ export async function createChatAgent(
     conversationMemory,
     factMemory,
     connectedProviders,
+    providerToolNames,
     threadId: threadId ?? randomUUID(),
     maxToolRounds: config.maxToolRounds ?? 10,
   });
@@ -151,6 +160,7 @@ interface ChatAgentInternals {
   conversationMemory?: ConversationMemory;
   factMemory?: FactMemory;
   connectedProviders: ConnectedProvider[];
+  providerToolNames: string[];
   threadId: string;
   maxToolRounds: number;
 }
@@ -166,6 +176,7 @@ class ChatAgentImpl implements ChatAgent {
   private conversationMemory?: ConversationMemory;
   private factMemory?: FactMemory;
   private connectedProviders: ConnectedProvider[];
+  private providerToolNames: string[];
   private threadId: string;
   private maxToolRounds: number;
   private history: ChatMessage[] = [];
@@ -178,6 +189,7 @@ class ChatAgentImpl implements ChatAgent {
     this.conversationMemory = internals.conversationMemory;
     this.factMemory = internals.factMemory;
     this.connectedProviders = internals.connectedProviders;
+    this.providerToolNames = internals.providerToolNames;
     this.threadId = internals.threadId;
     this.maxToolRounds = internals.maxToolRounds;
     this.provider = internals.adapter.name;
@@ -589,6 +601,14 @@ class ChatAgentImpl implements ChatAgent {
         // Best-effort cleanup
       }
     }
+    // Remove tools added by this agent's providers from the registry.
+    // Without this, long-lived processes that create and destroy
+    // agents accumulate ghost tools in shared registries.
+    for (const name of this.providerToolNames) {
+      this.registry.unregister(name);
+    }
+    this.providerToolNames = [];
+    this.connectedProviders = [];
   }
 }
 
