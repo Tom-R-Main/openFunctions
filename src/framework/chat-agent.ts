@@ -199,7 +199,8 @@ class ChatAgentImpl implements ChatAgent {
     message: string,
     options?: ChatAgentChatOptions,
   ): Promise<ChatResult> {
-    const currentThreadId = options?.threadId ?? this.threadId;
+    this.switchThreadIfNeeded(options?.threadId);
+    const currentThreadId = this.threadId;
     const promptOverride = options?.systemPrompt;
 
     // Snapshot history length so we can roll back if the turn fails.
@@ -323,7 +324,8 @@ class ChatAgentImpl implements ChatAgent {
     message: string,
     options?: ChatAgentChatOptions,
   ): AsyncIterable<ChatStreamChunk> {
-    const currentThreadId = options?.threadId ?? this.threadId;
+    this.switchThreadIfNeeded(options?.threadId);
+    const currentThreadId = this.threadId;
     const promptOverride = options?.systemPrompt;
 
     // See chatAsync for why we snapshot before the user push.
@@ -546,6 +548,29 @@ class ChatAgentImpl implements ChatAgent {
   }
 
   // ── State management ───────────────────────────────────────────────────
+
+  /**
+   * If a different threadId is requested AND conversation memory is on,
+   * rehydrate this.history from the persisted thread and switch the
+   * agent to that thread. Without this, options.threadId on chat() and
+   * the HTTP /chat endpoint silently did nothing — the agent kept its
+   * own per-instance history regardless.
+   *
+   * NOTE: ChatAgent is single-tenant. Two concurrent chat() calls with
+   * different threadIds will race on this.history. For true multi-tenant
+   * serving, create one ChatAgent per session.
+   */
+  private switchThreadIfNeeded(requestedThreadId: string | undefined): void {
+    if (!requestedThreadId || requestedThreadId === this.threadId) return;
+    if (!this.conversationMemory) {
+      // No memory means nothing to rehydrate; just track the new id.
+      this.threadId = requestedThreadId;
+      return;
+    }
+    const thread = this.conversationMemory.getThread(requestedThreadId);
+    this.history = [...thread.messages];
+    this.threadId = requestedThreadId;
+  }
 
   getHistory(): ChatMessage[] {
     return [...this.history];

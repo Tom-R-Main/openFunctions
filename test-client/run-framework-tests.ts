@@ -756,6 +756,40 @@ test("chat-agent: empty model response surfaces a meaningful placeholder", async
   assert.equal(result.text, "(empty response from model)");
 });
 
+test("chat-agent: switching threadId rehydrates history from memory", async () => {
+  // Persist a fake conversation under "thread-A".
+  const conversationStore = createStore<any>(uniqueStoreName());
+  const factStore = createStore<any>(uniqueStoreName());
+  conversationStore.set("thread-A", {
+    id: "thread-A",
+    messages: [
+      { role: "user", content: "first message" },
+      { role: "assistant", content: "first response" },
+    ],
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+  });
+
+  const adapter = mockAdapter([{ text: "fresh response" }]);
+  const agent = await createChatAgent({
+    adapter,
+    memory: { conversationStore, factStore, threadId: "thread-B" },
+  });
+
+  // Agent starts on thread-B; calling chat() with thread-A should
+  // pull the prior messages into history before the new turn.
+  await agent.chat("second message", { threadId: "thread-A" });
+
+  const hist = agent.getHistory();
+  // Expected: [user "first", assistant "first response",
+  //            user "second message", assistant "fresh response"]
+  assert.equal(hist.length, 4);
+  assert.equal(hist[0].content, "first message");
+  assert.equal(hist[1].content, "first response");
+  assert.equal(hist[2].content, "second message");
+  assert.equal(hist[3].content, "fresh response");
+});
+
 test("chat-agent: synthetic placeholders not persisted to long-term memory", async () => {
   const adapter = mockAdapter([{}]);
   const conversationStore = createStore<any>(uniqueStoreName());
