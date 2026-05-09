@@ -105,7 +105,19 @@ export async function serveChatAgent(
       });
     } catch (error) {
       const message = error instanceof Error ? error.message : "Internal server error";
-      sendJson(res, 500, { error: message });
+      if (res.headersSent) {
+        // SSE stream already started — emit an error frame and close cleanly
+        // rather than calling writeHead a second time (which would throw
+        // ERR_HTTP_HEADERS_SENT and crash the server).
+        try {
+          res.write(`event: error\ndata: ${JSON.stringify({ error: message })}\n\n`);
+        } catch {
+          // ignore — connection may already be torn down
+        }
+        res.end();
+      } else {
+        sendJson(res, 500, { error: message });
+      }
     }
   });
 

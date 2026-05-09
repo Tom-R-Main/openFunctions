@@ -17,7 +17,7 @@
  * research on section ordering and XML tag boundaries.
  */
 
-import { readFileSync, existsSync } from "node:fs";
+import { readFileSync, existsSync, readdirSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { ToolRegistry } from "./registry.js";
@@ -186,10 +186,9 @@ export function loadPromptPreset(
  */
 export function listPresets(): string[] {
   try {
-    const { readdirSync } = require("node:fs");
     return readdirSync(PRESETS_DIR)
-      .filter((f: string) => f.endsWith(".md"))
-      .map((f: string) => f.replace(/\.md$/, ""));
+      .filter((f) => f.endsWith(".md"))
+      .map((f) => f.replace(/\.md$/, ""));
   } catch {
     return [];
   }
