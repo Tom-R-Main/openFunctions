@@ -13,7 +13,7 @@
     "test-tools": "tsx test-client/cli.ts",
     "chat": "tsx scripts/chat.ts",
     "gemini": "tsx scripts/chat.ts gemini",
-    "test": "tsx test-client/run-tests.ts",
+    "test": "tsx test-client/run-tests.ts && tsx test-client/run-framework-tests.ts",
     "create-tool": "tsx scripts/create-tool.ts",
     "docs": "tsx scripts/generate-docs.ts",
     "inspect": "npx @modelcontextprotocol/inspector tsx src/index.ts"
