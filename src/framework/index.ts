@@ -101,6 +101,15 @@ export type {
 // Test runner
 export { runTests } from "./test-runner.js";
 
+// Openclaw bridge
+export { toOpenclawTools, toolToOpenclaw } from "./openclaw.js";
+export type {
+  OpenclawToolShape,
+  OpenclawToolResult,
+  OpenclawToolContentBlock,
+  ToOpenclawToolsOptions,
+} from "./openclaw.js";
+
 // Types (for students who want TypeScript help)
 export type {
   ToolDefinition,

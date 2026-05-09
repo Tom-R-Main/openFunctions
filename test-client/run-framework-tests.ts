@@ -614,6 +614,189 @@ test("registry: unregister removes the tool and returns existed-flag", () => {
 });
 
 // ─────────────────────────────────────────────────────────────────────────
+// openclaw.ts — bridge from openFunctions registry → openclaw tools
+// ─────────────────────────────────────────────────────────────────────────
+
+import { toOpenclawTools, toolToOpenclaw } from "../src/framework/openclaw.js";
+
+test("openclaw bridge: converts every registered tool by default", () => {
+  const r = new ToolRegistry();
+  r.register(
+    defineTool({
+      name: "echo",
+      description: "echo the input back",
+      inputSchema: {
+        type: "object",
+        properties: { msg: { type: "string" } },
+        required: ["msg"],
+      },
+      handler: async ({ msg }) => ok({ echoed: msg }),
+    }),
+  );
+  r.register(
+    defineTool({
+      name: "ping",
+      description: "always returns pong",
+      inputSchema: { type: "object", properties: {} },
+      handler: async () => ok({ value: "pong" }),
+    }),
+  );
+
+  const tools = toOpenclawTools(r);
+  assert.equal(tools.length, 2);
+  const names = tools.map((t) => t.name).sort();
+  assert.deepEqual(names, ["echo", "ping"]);
+  // Description and parameters pass through verbatim.
+  assert.equal(tools.find((t) => t.name === "echo")?.description, "echo the input back");
+  assert.equal(
+    (tools.find((t) => t.name === "echo")?.parameters as { type: string }).type,
+    "object",
+  );
+});
+
+test("openclaw bridge: execute() runs the tool and wraps the result", async () => {
+  const r = new ToolRegistry();
+  r.register(
+    defineTool({
+      name: "double",
+      description: "double a number",
+      inputSchema: {
+        type: "object",
+        properties: { n: { type: "number" } },
+        required: ["n"],
+      },
+      handler: async ({ n }) => ok({ doubled: (n as number) * 2 }, "calculated"),
+    }),
+  );
+
+  const [tool] = toOpenclawTools(r);
+  const result = await tool.execute("call_1", { n: 21 });
+
+  assert.equal(result.type, "text");
+  assert.equal(result.isError, undefined);
+  assert.equal(result.content.length, 1);
+  assert.equal(result.content[0].type, "text");
+  assert.match(result.content[0].text, /calculated/);
+  assert.match(result.content[0].text, /"doubled": 42/);
+});
+
+test("openclaw bridge: failed tool returns error block with isError", async () => {
+  const r = new ToolRegistry();
+  r.register(
+    defineTool({
+      name: "always_fails",
+      description: "always returns err()",
+      inputSchema: { type: "object", properties: {} },
+      handler: async () => err("boom"),
+    }),
+  );
+
+  const [tool] = toOpenclawTools(r);
+  const result = await tool.execute("call_1", {});
+  assert.equal(result.type, "error");
+  assert.equal(result.isError, true);
+  assert.match(result.content[0].text, /boom/);
+});
+
+test("openclaw bridge: validation errors flow through as error blocks", async () => {
+  const r = new ToolRegistry();
+  r.register(
+    defineTool({
+      name: "needs_field",
+      description: "requires a field",
+      inputSchema: {
+        type: "object",
+        properties: { field: { type: "string" } },
+        required: ["field"],
+      },
+      handler: async () => ok({ ran: true }),
+    }),
+  );
+
+  const [tool] = toOpenclawTools(r);
+  // Missing required param — registry.execute should refuse before the handler.
+  const result = await tool.execute("call_1", {});
+  assert.equal(result.isError, true);
+  assert.match(result.content[0].text, /field/i);
+});
+
+test("openclaw bridge: filter narrows the exposed set", () => {
+  const r = new ToolRegistry();
+  r.register(
+    defineTool({
+      name: "internal_metric",
+      description: "internal-only",
+      inputSchema: { type: "object", properties: {} },
+      tags: ["internal"],
+      handler: async () => ok({}),
+    }),
+  );
+  r.register(
+    defineTool({
+      name: "public_action",
+      description: "ok to expose",
+      inputSchema: { type: "object", properties: {} },
+      tags: ["public"],
+      handler: async () => ok({}),
+    }),
+  );
+
+  const tools = toOpenclawTools(r, {
+    filter: (t) => t.tags?.includes("public") ?? false,
+  });
+  assert.equal(tools.length, 1);
+  assert.equal(tools[0].name, "public_action");
+});
+
+test("openclaw bridge: namePrefix collision-avoids when bundling sources", () => {
+  const r = new ToolRegistry();
+  r.register(
+    defineTool({
+      name: "list",
+      description: "list things from the source",
+      inputSchema: { type: "object", properties: {} },
+      handler: async () => ok({}),
+    }),
+  );
+  const [tool] = toOpenclawTools(r, { namePrefix: "siftable_" });
+  assert.equal(tool.name, "siftable_list");
+});
+
+test("openclaw bridge: custom formatResult is honored", async () => {
+  const r = new ToolRegistry();
+  r.register(
+    defineTool({
+      name: "stamp",
+      description: "stamps stuff",
+      inputSchema: { type: "object", properties: {} },
+      handler: async () => ok({ stamped: true }),
+    }),
+  );
+  const [tool] = toOpenclawTools(r, {
+    formatResult: (result) => ({
+      type: "text",
+      content: [{ type: "text", text: `OK: ${JSON.stringify(result.data)}` }],
+    }),
+  });
+  const result = await tool.execute("c1", {});
+  assert.equal(result.content[0].text, 'OK: {"stamped":true}');
+});
+
+test("openclaw bridge: toolToOpenclaw works on a single tool", async () => {
+  const r = new ToolRegistry();
+  const t = defineTool({
+    name: "lone",
+    description: "lone wolf",
+    inputSchema: { type: "object", properties: {} },
+    handler: async () => ok({ alone: true }),
+  });
+  r.register(t);
+  const oc = toolToOpenclaw(t, r);
+  const result = await oc.execute("c1", {});
+  assert.match(result.content[0].text, /alone/);
+});
+
+// ─────────────────────────────────────────────────────────────────────────
 // agents.ts — Ralph loop
 // ─────────────────────────────────────────────────────────────────────────
 
