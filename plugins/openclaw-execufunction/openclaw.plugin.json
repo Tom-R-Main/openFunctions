@@ -1,18 +1,18 @@
 {
   "id": "execufunction",
   "providerAuthEnvVars": {
-    "execufunction": ["EXF_PAT"]
+    "execufunction": ["SIFT_PAT", "EXF_PAT"]
   },
   "uiHints": {
     "apiUrl": {
-      "label": "ExecuFunction API URL",
-      "help": "Base URL for the ExecuFunction API (default: https://execufunction.com)."
+      "label": "Siftable API URL",
+      "help": "Base URL for the Siftable API (default: https://execufunction.com)."
     },
     "token": {
       "label": "Personal Access Token",
-      "help": "ExecuFunction PAT. Generate one at Settings > API Tokens. Fallback: EXF_PAT env var.",
+      "help": "Siftable PAT. Generate one at Settings > API Tokens. Fallback env vars: SIFT_PAT, then legacy EXF_PAT.",
       "sensitive": true,
-      "placeholder": "exf_pat_..."
+      "placeholder": "sift_pat_... (legacy exf_pat_... still works)"
     },
     "workspaceId": {
       "label": "Workspace ID",

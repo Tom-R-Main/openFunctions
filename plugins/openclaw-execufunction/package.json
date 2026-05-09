@@ -1,12 +1,13 @@
 {
   "name": "@openfunctions/openclaw-execufunction",
-  "version": "0.1.0",
-  "description": "ExecuFunction plugin for OpenClaw — tasks, calendar, knowledge, CRM, codebase, and more",
+  "version": "0.2.0",
+  "description": "Siftable plugin for OpenClaw — tasks, calendar, knowledge, CRM, codebase, and more (formerly ExecuFunction)",
   "type": "module",
   "license": "MIT",
   "keywords": [
     "openclaw",
     "openclaw-plugin",
+    "siftable",
     "execufunction",
     "tasks",
     "calendar",
@@ -23,6 +24,9 @@
     "src/",
     "openclaw.plugin.json"
   ],
+  "dependencies": {
+    "@siftable/mcp-server": "^1.2.9"
+  },
   "devDependencies": {
     "@openclaw/plugin-sdk": "*",
     "@sinclair/typebox": "^0.34.0"

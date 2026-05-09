@@ -1,8 +1,17 @@
+/**
+ * Siftable client for the openclaw plugin.
+ *
+ * Thin adapter over the published @siftable/mcp-server SDK. Keeps the
+ * ExfClient call surface stable so the plugin's tool handlers don't
+ * need to change. Resolves auth from openclaw plugin config first,
+ * then SIFT_PAT, then legacy EXF_PAT.
+ */
+
+import { SiftClient } from "@siftable/mcp-server/exfClient";
 import type { OpenClawConfig } from "openclaw/plugin-sdk/config-runtime";
 import { normalizeSecretInput } from "openclaw/plugin-sdk/secret-input";
 
 const DEFAULT_API_URL = "https://execufunction.com";
-const REQUEST_TIMEOUT_MS = 30_000;
 
 type PluginEntryConfig = {
   apiUrl?: string;
@@ -24,119 +33,75 @@ function resolveToken(cfg?: OpenClawConfig): string | undefined {
   if (configToken && typeof configToken === "object" && "path" in configToken) {
     return normalizeSecretInput(configToken) || undefined;
   }
-  return normalizeSecretInput(process.env.EXF_PAT) || undefined;
+  // SIFT_PAT is the current brand; EXF_PAT is the legacy fallback.
+  return (
+    normalizeSecretInput(process.env.SIFT_PAT) ||
+    normalizeSecretInput(process.env.EXF_PAT) ||
+    undefined
+  );
 }
 
 function resolveApiUrl(cfg?: OpenClawConfig): string {
   const pluginConfig = resolvePluginConfig(cfg);
-  return pluginConfig?.apiUrl?.trim() || process.env.EXF_API_URL || DEFAULT_API_URL;
+  return (
+    pluginConfig?.apiUrl?.trim() ||
+    process.env.SIFT_API_URL ||
+    process.env.EXF_API_URL ||
+    DEFAULT_API_URL
+  );
 }
 
 function resolveWorkspaceId(cfg?: OpenClawConfig): string | undefined {
   const pluginConfig = resolvePluginConfig(cfg);
-  return pluginConfig?.workspaceId || process.env.EXF_WORKSPACE_ID || undefined;
+  return (
+    pluginConfig?.workspaceId ||
+    process.env.SIFT_WORKSPACE_ID ||
+    process.env.EXF_WORKSPACE_ID ||
+    undefined
+  );
+}
+
+/** Unwrap an ApiResponse, throwing on error so handlers can use try/catch. */
+function unwrap<T>(
+  res: { data?: T; error?: string; statusCode: number },
+  label: string,
+): T {
+  if (res.error || !res.data) {
+    throw new Error(
+      `Siftable ${label} failed (HTTP ${res.statusCode}): ${res.error ?? "empty response"}`,
+    );
+  }
+  return res.data;
 }
 
 export class ExfClient {
-  private baseUrl: string;
-  private token: string;
-  private workspaceId: string | undefined;
-  private timezone: string;
+  private sift: SiftClient;
 
   constructor(cfg?: OpenClawConfig) {
     const token = resolveToken(cfg);
     if (!token) {
       throw new Error(
-        "ExecuFunction requires a Personal Access Token. " +
-          "Set EXF_PAT in your environment, or configure plugins.entries.execufunction.config.token.",
+        "Siftable requires a Personal Access Token. " +
+          "Set SIFT_PAT (or legacy EXF_PAT) in your environment, " +
+          "or configure plugins.entries.execufunction.config.token.",
       );
     }
-    this.token = token;
-    this.baseUrl = resolveApiUrl(cfg);
-    this.workspaceId = resolveWorkspaceId(cfg);
-    this.timezone = Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
+    this.sift = new SiftClient({
+      apiUrl: resolveApiUrl(cfg).replace(/\/+$/, ""),
+      pat: token,
+      workspaceId: resolveWorkspaceId(cfg),
+    });
   }
 
-  private async request<T>(
-    method: string,
-    path: string,
-    body?: Record<string, unknown>,
-    query?: Record<string, string | number | boolean | undefined>,
-  ): Promise<T> {
-    const url = new URL(`/api/v1${path}`, this.baseUrl);
-    if (query) {
-      for (const [k, v] of Object.entries(query)) {
-        if (v !== undefined && v !== "") {
-          url.searchParams.set(k, String(v));
-        }
-      }
-    }
-
-    const headers: Record<string, string> = {
-      Authorization: `Bearer ${this.token}`,
-      "Content-Type": "application/json",
-      Timezone: this.timezone,
-    };
-    if (this.workspaceId) {
-      headers["X-Workspace-Id"] = this.workspaceId;
-    }
-    if (method !== "GET") {
-      headers["Idempotency-Key"] = crypto.randomUUID();
-    }
-
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
-
-    try {
-      const response = await fetch(url.toString(), {
-        method,
-        headers,
-        body: body ? JSON.stringify(body) : undefined,
-        signal: controller.signal,
-      });
-
-      if (!response.ok) {
-        const text = await response.text().catch(() => "");
-        let detail = text;
-        try {
-          const json = JSON.parse(text);
-          detail = json.error || json.message || text;
-        } catch {
-          // use raw text
-        }
-        throw new Error(`ExecuFunction API ${method} ${path} failed (${response.status}): ${detail}`);
-      }
-
-      return (await response.json()) as T;
-    } finally {
-      clearTimeout(timeout);
-    }
-  }
-
-  async get<T>(path: string, query?: Record<string, string | number | boolean | undefined>): Promise<T> {
-    return this.request<T>("GET", path, undefined, query);
-  }
-
-  async post<T>(path: string, body: Record<string, unknown>): Promise<T> {
-    return this.request<T>("POST", path, body);
-  }
-
-  async patch<T>(path: string, body: Record<string, unknown>): Promise<T> {
-    return this.request<T>("PATCH", path, body);
-  }
-
-  async delete<T>(path: string): Promise<T> {
-    return this.request<T>("DELETE", path);
+  /** Underlying SDK for callers wanting endpoints we haven't wrapped. */
+  raw(): SiftClient {
+    return this.sift;
   }
 
   // --- Tasks ---
 
-  async listTasks(filters?: {
-    projectId?: string;
-    status?: string;
-    limit?: number;
-  }) {
-    return this.get<{ tasks: unknown[] }>("/tasks", filters);
+  async listTasks(filters?: { projectId?: string; status?: string; limit?: number }) {
+    return unwrap(await this.sift.listTasks(filters), "listTasks");
   }
 
   async createTask(data: {
@@ -145,40 +110,52 @@ export class ExfClient {
     priority?: string;
     projectId?: string;
     dueAt?: string;
+    /** Semicolon-separated, e.g. "criterion 1; criterion 2" */
     acceptanceCriteria?: string;
   }) {
-    const body: Record<string, unknown> = { title: data.title };
-    if (data.description) body.description = data.description;
-    if (data.priority) body.priority = data.priority;
-    if (data.projectId) body.projectId = data.projectId;
-    if (data.dueAt) body.dueAt = data.dueAt;
-    if (data.acceptanceCriteria) {
-      body.acceptanceCriteria = data.acceptanceCriteria
-        .split(";")
-        .map((c) => c.trim())
-        .filter(Boolean)
-        .map((text) => ({ text }));
-    }
-    return this.post<{ task: unknown }>("/tasks", body);
+    const acceptanceCriteria = data.acceptanceCriteria
+      ?.split(";")
+      .map((c) => c.trim())
+      .filter(Boolean)
+      .map((text) => ({ text }));
+    return unwrap(
+      await this.sift.createTask({
+        title: data.title,
+        description: data.description,
+        priority: data.priority,
+        projectId: data.projectId,
+        dueAt: data.dueAt,
+        acceptanceCriteria,
+      }),
+      "createTask",
+    );
   }
 
   async updateTask(taskId: string, data: Record<string, unknown>) {
-    return this.patch<{ task: unknown }>(`/tasks/${taskId}`, data);
+    return unwrap(
+      await this.sift.updateTask(taskId, data as never),
+      "updateTask",
+    );
   }
 
   async completeTask(taskId: string, completionNotes?: string) {
-    const body: Record<string, unknown> = {
-      status: "completed",
-      phase: "done",
-    };
-    if (completionNotes) body.completionNotes = completionNotes;
-    return this.patch<{ task: unknown }>(`/tasks/${taskId}`, body);
+    if (completionNotes) {
+      const update = await this.sift.updateTask(taskId, {
+        completionNotes,
+      } as never);
+      if (update.error) {
+        throw new Error(
+          `Siftable updateTask (notes) failed (HTTP ${update.statusCode}): ${update.error}`,
+        );
+      }
+    }
+    return unwrap(await this.sift.completeTask(taskId), "completeTask");
   }
 
   // --- Calendar ---
 
   async listEvents(filters: { startDate: string; endDate: string; limit?: number }) {
-    return this.get<{ events: unknown[] }>("/calendar/events", filters);
+    return unwrap(await this.sift.listCalendarEvents(filters), "listCalendarEvents");
   }
 
   async createEvent(data: {
@@ -189,17 +166,28 @@ export class ExfClient {
     location?: string;
     allDay?: boolean;
   }) {
-    return this.post<{ event: unknown }>("/calendar/events", data);
+    return unwrap(
+      await this.sift.createCalendarEvent(data as never),
+      "createCalendarEvent",
+    );
   }
 
   async updateEvent(eventId: string, data: Record<string, unknown>) {
-    return this.patch<{ event: unknown }>(`/calendar/events/${eventId}`, data);
+    return unwrap(
+      await this.sift.updateCalendarEvent(eventId, data as never),
+      "updateCalendarEvent",
+    );
   }
 
   // --- Notes/Knowledge ---
 
   async searchNotes(query: string, limit?: number) {
-    return this.get<{ notes: unknown[] }>("/notes/search", { q: query, limit });
+    // SDK returns { results }; tools expect { notes }.
+    const data = unwrap(
+      await this.sift.searchNotes(query, limit ? { limit } : undefined),
+      "searchNotes",
+    );
+    return { notes: data.results };
   }
 
   async createNote(data: {
@@ -209,27 +197,36 @@ export class ExfClient {
     projectId?: string;
     tags?: string[];
   }) {
-    return this.post<{ note: unknown }>("/notes", data as Record<string, unknown>);
+    return unwrap(
+      await this.sift.createNote(data as never),
+      "createNote",
+    );
   }
 
   async getNote(noteId: string) {
-    return this.get<{ note: unknown }>(`/notes/${noteId}`);
+    return unwrap(await this.sift.getNote(noteId), "getNote");
   }
 
   // --- Projects ---
 
   async listProjects(filters?: { status?: string }) {
-    return this.get<{ projects: unknown[] }>("/projects", filters);
+    return unwrap(await this.sift.listProjects(filters), "listProjects");
   }
 
   async getProjectContext(projectId: string) {
-    return this.get<Record<string, unknown>>(`/projects/${projectId}/context`);
+    return unwrap(
+      await this.sift.getProjectContext(projectId),
+      "getProjectContext",
+    );
   }
 
   // --- People ---
 
   async searchPeople(search: string) {
-    return this.get<{ people: unknown[] }>("/people", { search });
+    return unwrap(
+      await this.sift.searchPeople({ query: search }),
+      "searchPeople",
+    );
   }
 
   async createPerson(data: {
@@ -240,27 +237,34 @@ export class ExfClient {
     organizationId?: string;
     notes?: string;
   }) {
-    return this.post<{ person: unknown }>("/people", data as Record<string, unknown>);
+    return unwrap(
+      await this.sift.createPerson(data as never),
+      "createPerson",
+    );
   }
 
   // --- Organizations ---
 
   async searchOrganizations(search: string) {
-    return this.get<{ organizations: unknown[] }>("/organizations", { search });
+    return unwrap(
+      await this.sift.searchOrganizations({ query: search }),
+      "searchOrganizations",
+    );
   }
 
   // --- Codebase ---
 
   async searchCode(query: string, repositoryId?: string) {
-    const body: Record<string, unknown> = { query };
-    if (repositoryId) body.repositoryId = repositoryId;
-    return this.post<{ results: unknown[] }>("/code/search", body);
+    return unwrap(
+      await this.sift.searchCode({ query, repositoryId }),
+      "searchCode",
+    );
   }
 
   async codeWhoKnows(repositoryId: string, area: string) {
-    return this.get<Record<string, unknown>>(
-      `/code/repositories/${repositoryId}/expertise/who-knows`,
-      { area },
+    return unwrap(
+      await this.sift.whoKnows(repositoryId, area),
+      "whoKnows",
     );
   }
 }
