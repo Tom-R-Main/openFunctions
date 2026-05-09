@@ -7,6 +7,7 @@
 
 import type { AIAdapter, AdapterConfig, ChatMessage, ChatOptions, AdapterResponse } from "./types.js";
 import type { ToolRegistry } from "../registry.js";
+import { safeJsonParse } from "./util.js";
 
 export function createAnthropicAdapter(config?: Partial<AdapterConfig>): AIAdapter {
   const apiKey = config?.apiKey ?? process.env.ANTHROPIC_API_KEY;
@@ -42,7 +43,7 @@ export function createAnthropicAdapter(config?: Partial<AdapterConfig>): AIAdapt
                 type: "tool_use",
                 id: msg.toolCallId,
                 name: msg.toolName,
-                input: JSON.parse(msg.content),
+                input: safeJsonParse(msg.content, {}),
               }],
             });
           } else {

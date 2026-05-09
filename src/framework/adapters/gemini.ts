@@ -7,6 +7,7 @@
 
 import type { AIAdapter, AdapterConfig, ChatMessage, ChatOptions, AdapterResponse } from "./types.js";
 import type { ToolRegistry } from "../registry.js";
+import { safeJsonParse } from "./util.js";
 
 export function createGeminiAdapter(config?: Partial<AdapterConfig>): AIAdapter {
   const apiKey = config?.apiKey ?? process.env.GEMINI_API_KEY;
@@ -32,7 +33,7 @@ export function createGeminiAdapter(config?: Partial<AdapterConfig>): AIAdapter 
             parts: [{
               functionResponse: {
                 name: msg.toolName!,
-                response: JSON.parse(msg.content),
+                response: safeJsonParse(msg.content, { result: msg.content }),
               },
             }],
           };
