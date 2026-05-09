@@ -82,6 +82,32 @@ export const saveRecipe = defineTool<SaveRecipeParams>({
     required: ["title", "ingredients", "instructions"],
   },
   tags: ["cooking", "recipes"],
+  tests: [
+    {
+      name: "saves a basic recipe",
+      input: {
+        title: "Toast",
+        ingredients: ["1 slice bread", "butter"],
+        instructions: ["Toast the bread", "Spread butter"],
+      },
+      expect: { success: true, data: { title: "Toast" } },
+    },
+    {
+      name: "saves a recipe with tags and metadata",
+      input: {
+        title: "Pasta Pomodoro",
+        ingredients: ["pasta", "tomato sauce", "basil"],
+        instructions: ["Boil pasta", "Heat sauce", "Combine"],
+        tags: ["dinner", "italian", "vegetarian"],
+        prep_time: 20,
+        servings: 4,
+      },
+      expect: {
+        success: true,
+        data: { title: "Pasta Pomodoro", prepTime: 20, servings: 4 },
+      },
+    },
+  ],
   handler: async ({ title, ingredients, instructions, tags, prep_time, servings }) => {
     const id = String(nextId++);
     const recipe: Recipe = {
@@ -123,6 +149,23 @@ export const searchRecipes = defineTool<SearchRecipesParams>({
     required: [],
   },
   tags: ["cooking", "recipes"],
+  tests: [
+    {
+      name: "search with no filters returns all recipes",
+      input: {},
+      expect: { success: true },
+    },
+    {
+      name: "search by tag returns matching shape",
+      input: { tag: "vegetarian" },
+      expect: { success: true },
+    },
+    {
+      name: "search with no-match query returns zero results",
+      input: { query: "xyznotarealrecipe123" },
+      expect: { success: true, data: { total: 0 } },
+    },
+  ],
   handler: async ({ query, tag, ingredient }) => {
     let results = recipes.getAll();
 
@@ -170,6 +213,18 @@ export const getRandom = defineTool<GetRandomParams>({
     required: [],
   },
   tags: ["cooking", "recipes"],
+  tests: [
+    {
+      name: "returns a random recipe when any are saved",
+      input: {},
+      expect: { success: true },
+    },
+    {
+      name: "fails when no recipe matches the tag",
+      input: { tag: "this-tag-does-not-exist-zzz999" },
+      expect: { success: false, errorContains: "No recipes found" },
+    },
+  ],
   handler: async ({ tag }) => {
     let candidates = recipes.getAll();
 

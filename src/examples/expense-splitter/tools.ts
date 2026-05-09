@@ -134,6 +134,41 @@ export const addExpense = defineTool<AddExpenseParams>({
       },
     },
   ],
+  tests: [
+    {
+      name: "records a basic expense",
+      input: {
+        description: "Coffee",
+        amount: 12,
+        paid_by: "Alice",
+        split_between: ["Alice", "Bob"],
+      },
+      expect: {
+        success: true,
+        data: { description: "Coffee", amount: 12, paidBy: "Alice" },
+      },
+    },
+    {
+      name: "rejects a non-positive amount",
+      input: {
+        description: "Free thing",
+        amount: 0,
+        paid_by: "Alice",
+        split_between: ["Alice", "Bob"],
+      },
+      expect: { success: false, errorContains: "greater than zero" },
+    },
+    {
+      name: "rejects an empty split list",
+      input: {
+        description: "Lonely expense",
+        amount: 10,
+        paid_by: "Alice",
+        split_between: [],
+      },
+      expect: { success: false, errorContains: "at least one person" },
+    },
+  ],
   handler: async ({ description, amount, paid_by, split_between }) => {
     // Validate inputs
     if (amount <= 0) {
@@ -182,6 +217,13 @@ export const splitBill = defineTool<SplitBillParams>({
           settlements: [{ from: "Bob", to: "Alice", amount: 20 }],
         },
       },
+    },
+  ],
+  tests: [
+    {
+      name: "computes settlements when expenses exist",
+      input: {},
+      expect: { success: true },
     },
   ],
   handler: async () => {
@@ -253,6 +295,13 @@ export const getBalances = defineTool<GetBalancesParams>({
     properties: {},
   },
   tags: ["finance", "expense-splitting"],
+  tests: [
+    {
+      name: "returns balances when expenses exist",
+      input: {},
+      expect: { success: true },
+    },
+  ],
   handler: async () => {
     const allExpenses = expenses.getAll();
     if (allExpenses.length === 0) {

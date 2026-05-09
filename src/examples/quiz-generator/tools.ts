@@ -77,6 +77,29 @@ export const createQuiz = defineTool<CreateQuizParams>({
     required: ["topic", "questions"],
   },
   tags: ["education", "quiz"],
+  tests: [
+    {
+      name: "creates a quiz with one question",
+      input: {
+        topic: "Math",
+        questions: [
+          { question: "2 + 2 = ?", options: ["3", "4", "5"], correctIndex: 1 },
+        ],
+      },
+      expect: { success: true, data: { topic: "Math", questionCount: 1 } },
+    },
+    {
+      name: "creates a multi-question quiz and hides correct answers",
+      input: {
+        topic: "Geography",
+        questions: [
+          { question: "Capital of France?", options: ["Paris", "Lyon"], correctIndex: 0 },
+          { question: "Capital of Japan?", options: ["Tokyo", "Osaka"], correctIndex: 0 },
+        ],
+      },
+      expect: { success: true, data: { topic: "Geography", questionCount: 2 } },
+    },
+  ],
   handler: async ({ topic, questions }) => {
     const id = String(nextId++);
     const parsedQuestions = questions.map((q, i) => ({
@@ -134,6 +157,13 @@ export const answerQuestion = defineTool<AnswerQuestionParams>({
     required: ["quiz_id", "question_id", "answer_index"],
   },
   tags: ["education", "quiz"],
+  tests: [
+    {
+      name: "fails with nonexistent quiz ID",
+      input: { quiz_id: "no-such-quiz-zzz", question_id: 0, answer_index: 0 },
+      expect: { success: false, errorContains: "No quiz found" },
+    },
+  ],
   handler: async ({ quiz_id, question_id, answer_index }) => {
     const quiz = quizzes.get(quiz_id);
     if (!quiz) return err(`No quiz found with ID "${quiz_id}"`);
@@ -177,6 +207,13 @@ export const getScore = defineTool<GetScoreParams>({
     required: ["quiz_id"],
   },
   tags: ["education", "quiz"],
+  tests: [
+    {
+      name: "fails with nonexistent quiz ID",
+      input: { quiz_id: "no-such-quiz-zzz" },
+      expect: { success: false, errorContains: "No quiz found" },
+    },
+  ],
   handler: async ({ quiz_id }) => {
     const quiz = quizzes.get(quiz_id);
     if (!quiz) return err(`No quiz found with ID "${quiz_id}"`);

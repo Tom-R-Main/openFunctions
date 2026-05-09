@@ -63,6 +63,26 @@ export const saveLink = defineTool<SaveLinkParams>({
     required: ["url", "title"],
   },
   tags: ["knowledge", "bookmarks"],
+  tests: [
+    {
+      name: "saves a basic bookmark",
+      input: { url: "https://example.com", title: "Example" },
+      expect: { success: true, data: { url: "https://example.com", title: "Example" } },
+    },
+    {
+      name: "saves a bookmark with tags and a note",
+      input: {
+        url: "https://docs.python.org",
+        title: "Python Docs",
+        tags: ["python", "reference"],
+        note: "Official docs",
+      },
+      expect: {
+        success: true,
+        data: { title: "Python Docs", note: "Official docs" },
+      },
+    },
+  ],
   handler: async ({ url, title, tags, note }) => {
     const id = String(nextId++);
     const bookmark: Bookmark = {
@@ -98,6 +118,18 @@ export const searchLinks = defineTool<SearchLinksParams>({
     required: ["query"],
   },
   tags: ["knowledge", "bookmarks"],
+  tests: [
+    {
+      name: "search returns a result list shape",
+      input: { query: "python" },
+      expect: { success: true },
+    },
+    {
+      name: "search with a non-matching query returns zero results",
+      input: { query: "this-query-should-never-match-zzzqqqxxx" },
+      expect: { success: true, data: { total: 0 } },
+    },
+  ],
   handler: async ({ query, tag }) => {
     const q = query.toLowerCase();
     let results = bookmarks.getAll().filter(
@@ -140,6 +172,13 @@ export const tagLink = defineTool<TagLinkParams>({
     required: ["id", "tags"],
   },
   tags: ["knowledge", "bookmarks"],
+  tests: [
+    {
+      name: "fails when bookmark ID does not exist",
+      input: { id: "nonexistent-id-zzz", tags: ["foo"] },
+      expect: { success: false, errorContains: "No bookmark found" },
+    },
+  ],
   handler: async ({ id, tags }) => {
     const bookmark = bookmarks.get(id);
     if (!bookmark) return err(`No bookmark found with ID "${id}"`);

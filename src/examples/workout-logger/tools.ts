@@ -111,6 +111,30 @@ export const logWorkout = defineTool<LogWorkoutParams>({
       },
     },
   ],
+  tests: [
+    {
+      name: "logs a basic cardio workout",
+      input: { exercise: "Running", type: "cardio", duration: 30, intensity: "medium" },
+      expect: {
+        success: true,
+        data: { exercise: "Running", type: "cardio", duration: 30, intensity: "medium" },
+      },
+    },
+    {
+      name: "logs a strength workout with explicit date",
+      input: {
+        exercise: "Bench Press",
+        type: "strength",
+        duration: 45,
+        intensity: "high",
+        date: "2026-01-15",
+      },
+      expect: {
+        success: true,
+        data: { exercise: "Bench Press", type: "strength", date: "2026-01-15" },
+      },
+    },
+  ],
   handler: async ({ exercise, type, duration, intensity, date, notes }) => {
     const id = String(nextId++);
     const workout: Workout = {
@@ -143,6 +167,18 @@ export const getStats = defineTool<GetStatsParams>({
     },
   },
   tags: ["fitness", "health"],
+  tests: [
+    {
+      name: "returns stats shape for the last 7 days",
+      input: {},
+      expect: { success: true },
+    },
+    {
+      name: "honours a custom days lookback",
+      input: { days: 30 },
+      expect: { success: true },
+    },
+  ],
   handler: async ({ days }) => {
     const lookback = days ?? 7;
     const cutoff = daysAgo(lookback);
@@ -204,6 +240,13 @@ export const suggestWorkout = defineTool<SuggestWorkoutParams>({
     properties: {},
   },
   tags: ["fitness", "health"],
+  tests: [
+    {
+      name: "returns a workout suggestion",
+      input: {},
+      expect: { success: true, data: { duration: 30 } },
+    },
+  ],
   handler: async () => {
     const cutoff = daysAgo(7);
     const recent = workouts
