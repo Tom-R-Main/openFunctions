@@ -574,6 +574,96 @@ test("fact memory: storing after deletes does not collide with existing IDs", ()
 });
 
 // ─────────────────────────────────────────────────────────────────────────
+// adapters/openai.ts + adapters/xai.ts — Responses API session continuity
+// ─────────────────────────────────────────────────────────────────────────
+
+import { createOpenAIAdapter } from "../src/framework/adapters/openai.js";
+import { createXAIAdapter } from "../src/framework/adapters/xai.js";
+
+/** Replace global.fetch with a recorder that returns scripted JSON. */
+function withFetchMock(
+  responses: Array<Record<string, unknown>>,
+  fn: (calls: Array<Record<string, unknown>>) => Promise<void>,
+): Promise<void> {
+  const calls: Array<Record<string, unknown>> = [];
+  const original = global.fetch;
+  let i = 0;
+  // @ts-expect-error — narrowed mock signature
+  global.fetch = async (_url: string, init: { body: string }) => {
+    calls.push(JSON.parse(init.body));
+    const next = responses[i++] ?? responses[responses.length - 1];
+    return {
+      ok: true,
+      status: 200,
+      async json() {
+        return next;
+      },
+      async text() {
+        return JSON.stringify(next);
+      },
+    } as Response;
+  };
+  return fn(calls).finally(() => {
+    global.fetch = original;
+  });
+}
+
+const RESPONSES_OK = {
+  id: "resp_abc123",
+  output: [
+    { type: "message", content: [{ type: "output_text", text: "ok" }] },
+  ],
+};
+
+test("openai Responses adapter: keeps previous_response_id on user follow-up", async () => {
+  await withFetchMock([RESPONSES_OK, RESPONSES_OK], async (calls) => {
+    const adapter = createOpenAIAdapter({ apiKey: "test-key" });
+    const registry = new ToolRegistry();
+
+    await adapter.chat([{ role: "user", content: "first" }], registry);
+    await adapter.chat(
+      [
+        { role: "user", content: "first" },
+        { role: "assistant", content: "ok" },
+        { role: "user", content: "second" },
+      ],
+      registry,
+    );
+
+    assert.equal(calls.length, 2);
+    assert.equal(
+      calls[0].previous_response_id,
+      undefined,
+      "first call has no previous_response_id",
+    );
+    assert.equal(
+      calls[1].previous_response_id,
+      "resp_abc123",
+      "follow-up call must include previous_response_id so OpenAI threads context",
+    );
+  });
+});
+
+test("xai Responses adapter: keeps previous_response_id on user follow-up", async () => {
+  await withFetchMock([RESPONSES_OK, RESPONSES_OK], async (calls) => {
+    const adapter = createXAIAdapter({ apiKey: "test-key" });
+    const registry = new ToolRegistry();
+
+    await adapter.chat([{ role: "user", content: "first" }], registry);
+    await adapter.chat(
+      [
+        { role: "user", content: "first" },
+        { role: "assistant", content: "ok" },
+        { role: "user", content: "second" },
+      ],
+      registry,
+    );
+
+    assert.equal(calls[1].previous_response_id, "resp_abc123");
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────
 // chat-agent.ts — uses adapter injection (config.adapter) for unit testing
 // ─────────────────────────────────────────────────────────────────────────
 

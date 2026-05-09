@@ -41,9 +41,11 @@ export function createXAIAdapter(config?: Partial<AdapterConfig>): AIAdapter {
             output: lastMsg.content,
           }];
         } else {
-          // New user message — start fresh conversation turn
+          // User follow-up after a completed turn. Keep
+          // previous_response_id so xAI threads this turn onto the
+          // prior conversation server-side. Previously we discarded
+          // the id here, which restarted context every user message.
           input = lastMsg.content;
-          previousResponseId = undefined;
         }
       } else {
         // First message or after reset

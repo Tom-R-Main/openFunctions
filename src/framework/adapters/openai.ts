@@ -40,8 +40,11 @@ export function createOpenAIAdapter(config?: Partial<AdapterConfig>): AIAdapter 
             output: lastMsg.content,
           }];
         } else {
+          // User follow-up after a completed turn. Keep the
+          // previous_response_id so OpenAI threads this turn onto the
+          // prior conversation server-side. Previously we discarded
+          // the id here, which restarted context every user message.
           input = lastMsg.content;
-          previousResponseId = undefined;
         }
       } else {
         const lastUser = messages.filter((m) => m.role === "user").pop();
