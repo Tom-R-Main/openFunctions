@@ -49,11 +49,15 @@ export async function startChat(
         return;
       }
 
+      // Snapshot history length so a failed turn doesn't leave an
+      // orphan user message — see ChatAgent for the same pattern.
+      const historyLengthBefore = history.length;
       history.push({ role: "user", content: trimmed });
 
       try {
         await runConversationTurn(adapter, registry, history);
       } catch (err) {
+        history.length = historyLengthBefore;
         console.error(
           `\n  Error: ${err instanceof Error ? err.message : err}\n`
         );
