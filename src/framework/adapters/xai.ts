@@ -31,7 +31,10 @@ export function createXAIAdapter(config?: Partial<AdapterConfig>): AIAdapter {
       // Build input for xAI Responses API
       let input: any;
 
-      if (previousResponseId) {
+      // oneShot calls don't participate in session continuity at all.
+      const useSession = previousResponseId && !options?.oneShot;
+
+      if (useSession) {
         const lastMsg = messages[messages.length - 1];
         if (lastMsg.role === "tool") {
           // Send tool result back referencing the previous response
@@ -71,7 +74,7 @@ export function createXAIAdapter(config?: Partial<AdapterConfig>): AIAdapter {
         parallel_tool_calls: false,
       };
 
-      if (previousResponseId) {
+      if (useSession) {
         // xAI doesn't allow instructions + previous_response_id together
         body.previous_response_id = previousResponseId;
       } else {
@@ -100,7 +103,10 @@ export function createXAIAdapter(config?: Partial<AdapterConfig>): AIAdapter {
       }
 
       const data = await response.json();
-      previousResponseId = data.id;
+      // Only update session state when not in oneShot mode.
+      if (!options?.oneShot) {
+        previousResponseId = data.id;
+      }
 
       // Parse output items
       for (const item of data.output ?? []) {

@@ -724,6 +724,53 @@ test("openai Responses adapter: keeps previous_response_id on user follow-up", a
   });
 });
 
+test("openai Responses adapter: oneShot calls do not pollute session state", async () => {
+  // First call → returns id "session_1"
+  // Second call (oneShot) → returns id "extraction_77"; must NOT update state
+  // Third call → must still thread on top of "session_1", not "extraction_77"
+  await withFetchMock(
+    [
+      { ...RESPONSES_OK, id: "session_1" },
+      { ...RESPONSES_OK, id: "extraction_77" },
+      { ...RESPONSES_OK, id: "session_2" },
+    ],
+    async (calls) => {
+      const adapter = createOpenAIAdapter({ apiKey: "test-key" });
+      const registry = new ToolRegistry();
+
+      await adapter.chat([{ role: "user", content: "first" }], registry);
+      await adapter.chat(
+        [{ role: "user", content: "extract this" }],
+        registry,
+        { oneShot: true },
+      );
+      await adapter.chat(
+        [
+          { role: "user", content: "first" },
+          { role: "assistant", content: "ok" },
+          { role: "user", content: "third" },
+        ],
+        registry,
+      );
+
+      assert.equal(calls.length, 3);
+      assert.equal(calls[0].previous_response_id, undefined);
+      // oneShot must not read the cached id from the previous turn
+      assert.equal(
+        calls[1].previous_response_id,
+        undefined,
+        "oneShot call must not include previous_response_id",
+      );
+      // ...and must not have overwritten the cached id either
+      assert.equal(
+        calls[2].previous_response_id,
+        "session_1",
+        "third call must thread onto session_1, not the oneShot id",
+      );
+    },
+  );
+});
+
 test("xai Responses adapter: keeps previous_response_id on user follow-up", async () => {
   await withFetchMock([RESPONSES_OK, RESPONSES_OK], async (calls) => {
     const adapter = createXAIAdapter({ apiKey: "test-key" });

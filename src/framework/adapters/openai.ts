@@ -30,8 +30,10 @@ export function createOpenAIAdapter(config?: Partial<AdapterConfig>): AIAdapter 
 
     async chat(messages: ChatMessage[], registry: ToolRegistry, options?: ChatOptions): Promise<AdapterResponse> {
       let input: any;
+      // oneShot calls don't participate in session continuity at all.
+      const useSession = previousResponseId && !options?.oneShot;
 
-      if (previousResponseId) {
+      if (useSession) {
         const lastMsg = messages[messages.length - 1];
         if (lastMsg.role === "tool") {
           input = [{
@@ -69,7 +71,7 @@ export function createOpenAIAdapter(config?: Partial<AdapterConfig>): AIAdapter 
         parallel_tool_calls: false,
       };
 
-      if (previousResponseId) {
+      if (useSession) {
         body.previous_response_id = previousResponseId;
       } else {
         body.instructions = options?.systemPrompt ?? systemPrompt;
@@ -97,7 +99,10 @@ export function createOpenAIAdapter(config?: Partial<AdapterConfig>): AIAdapter 
       }
 
       const data = await response.json();
-      previousResponseId = data.id;
+      // Only update session state when not in oneShot mode.
+      if (!options?.oneShot) {
+        previousResponseId = data.id;
+      }
 
       for (const item of data.output ?? []) {
         if (item.type === "function_call") {

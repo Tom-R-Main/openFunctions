@@ -88,9 +88,15 @@ export async function forceStructuredOutput<T = Record<string, unknown>>(
     { role: "user", content: options.prompt },
   ];
 
-  // Call the adapter with tool_choice: required
+  // Call the adapter with tool_choice: required. oneShot tells stateful
+  // adapters (OpenAI/xAI Responses API) not to thread this extraction
+  // onto any prior conversation, and not to overwrite their session
+  // state with the extraction's response. Otherwise calling
+  // forceStructuredOutput on an in-use adapter would pollute the
+  // surrounding chat — and vice versa.
   const response = await adapter.chat(messages, tempRegistry, {
     toolChoice: "required",
+    oneShot: true,
   });
 
   if (!response.toolCall) {

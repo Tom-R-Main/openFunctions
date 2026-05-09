@@ -49,6 +49,14 @@ export interface ChatOptions {
   toolChoice?: "auto" | "required" | { name: string };
   /** Override the system prompt for this specific call (used by agents) */
   systemPrompt?: string;
+  /**
+   * Treat this call as independent — adapters that maintain stateful
+   * session context (OpenAI/xAI Responses API previousResponseId) will
+   * neither read nor write their session state for this call. Used by
+   * forceStructuredOutput so a one-shot extraction does not pollute or
+   * get polluted by the surrounding conversation on the same adapter.
+   */
+  oneShot?: boolean;
 }
 
 /** An AI provider adapter */
