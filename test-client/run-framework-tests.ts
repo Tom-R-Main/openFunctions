@@ -614,6 +614,234 @@ test("registry: unregister removes the tool and returns existed-flag", () => {
 });
 
 // ─────────────────────────────────────────────────────────────────────────
+// agents.ts — Ralph loop
+// ─────────────────────────────────────────────────────────────────────────
+
+import { defineAgent, runRalph, runCrew } from "../src/framework/agents.js";
+import type { AIAdapter, AdapterResponse } from "../src/framework/adapters/types.js";
+
+/**
+ * Like mockAdapter (defined later in this file), but defined here so the
+ * Ralph tests can use it without forward-reference. Returns scripted
+ * AdapterResponses one per call; throws if the script runs out.
+ */
+function scriptedAdapter(
+  responses: Array<AdapterResponse | Error>,
+  opts: { name?: string; model?: string } = {},
+): AIAdapter {
+  let i = 0;
+  return {
+    name: opts.name ?? "ralph-mock",
+    model: opts.model ?? "test-model",
+    async chat() {
+      const next = responses[i++];
+      if (next === undefined) {
+        throw new Error(
+          `scripted adapter: no more responses (call ${i}); ralph likely overran`,
+        );
+      }
+      if (next instanceof Error) throw next;
+      return next;
+    },
+  };
+}
+
+const noopAgent = defineAgent({
+  name: "ralph_test_agent",
+  role: "iterator",
+  goal: "complete the task",
+});
+
+test("runRalph: stops on completionPromise match", async () => {
+  // Iteration 1 + 2 are progress reports; iteration 3 contains the marker.
+  const adapter = scriptedAdapter([
+    { text: "iteration 1: working on it..." },
+    { text: "iteration 2: still progressing..." },
+    { text: "all done — <promise>RALPH_DONE</promise>" },
+  ]);
+
+  const result = await runRalph(
+    noopAgent,
+    "do the thing",
+    adapter,
+    new ToolRegistry(),
+    { maxIterations: 5, completionPromise: "<promise>RALPH_DONE</promise>" },
+  );
+
+  assert.equal(result.completed, true);
+  assert.equal(result.stopReason, "completion_signal");
+  assert.equal(result.iterations, 3);
+  assert.equal(result.history.length, 3);
+  assert.match(result.lastResult.output, /RALPH_DONE/);
+});
+
+test("runRalph: hits maxIterations without completing", async () => {
+  const adapter = scriptedAdapter([
+    { text: "still working" },
+    { text: "still working" },
+    { text: "still working" },
+  ]);
+
+  const result = await runRalph(
+    noopAgent,
+    "do the thing",
+    adapter,
+    new ToolRegistry(),
+    { maxIterations: 3, completionPromise: "DONE" },
+  );
+
+  assert.equal(result.completed, false);
+  assert.equal(result.stopReason, "max_iterations");
+  assert.equal(result.iterations, 3);
+});
+
+test("runRalph: completionCheck callback short-circuits the loop", async () => {
+  const adapter = scriptedAdapter([
+    { text: "first" },
+    { text: "second" },
+    { text: "third" },
+  ]);
+
+  const result = await runRalph(
+    noopAgent,
+    "do the thing",
+    adapter,
+    new ToolRegistry(),
+    {
+      maxIterations: 5,
+      // Stop after the second iteration via custom predicate.
+      completionCheck: (_r, iteration) => iteration === 2,
+    },
+  );
+
+  assert.equal(result.completed, true);
+  assert.equal(result.stopReason, "completion_check");
+  assert.equal(result.iterations, 2);
+});
+
+test("runRalph: onIteration receives each result with 1-indexed iteration", async () => {
+  const adapter = scriptedAdapter([
+    { text: "a" },
+    { text: "b — DONE" },
+  ]);
+
+  const seen: Array<{ iteration: number; output: string }> = [];
+  await runRalph(
+    noopAgent,
+    "task",
+    adapter,
+    new ToolRegistry(),
+    {
+      maxIterations: 5,
+      completionPromise: "DONE",
+      onIteration: (iteration, result) => {
+        seen.push({ iteration, output: result.output });
+      },
+    },
+  );
+
+  assert.deepEqual(seen, [
+    { iteration: 1, output: "a" },
+    { iteration: 2, output: "b — DONE" },
+  ]);
+});
+
+test("runRalph: throws on invalid maxIterations", async () => {
+  const adapter = scriptedAdapter([{ text: "x" }]);
+  await assert.rejects(
+    runRalph(noopAgent, "x", adapter, new ToolRegistry(), {
+      maxIterations: 0,
+    }),
+    /maxIterations must be > 0/,
+  );
+});
+
+test("runRalph: prepends iteration context unless disabled", async () => {
+  const taskSeen: string[] = [];
+  // Custom adapter that records the user message it received.
+  const recordingAdapter: AIAdapter = {
+    name: "recorder",
+    model: "test",
+    async chat(messages) {
+      const userMsg = messages.find((m) => m.role === "user");
+      if (userMsg) taskSeen.push(userMsg.content);
+      return { text: "DONE" };
+    },
+  };
+
+  await runRalph(noopAgent, "build it", recordingAdapter, new ToolRegistry(), {
+    maxIterations: 1,
+    completionPromise: "DONE",
+  });
+  assert.match(taskSeen[0], /\[Ralph iteration 1 of 1\]/);
+  assert.match(taskSeen[0], /build it/);
+
+  // includeIterationContext: false → identical prompt every time.
+  taskSeen.length = 0;
+  await runRalph(noopAgent, "build it", recordingAdapter, new ToolRegistry(), {
+    maxIterations: 1,
+    completionPromise: "DONE",
+    includeIterationContext: false,
+  });
+  assert.equal(taskSeen[0], "build it");
+});
+
+test("runCrew: ralph mode loops sequential crew until completion", async () => {
+  // Two-agent crew (research → write). Each iteration fires both agents.
+  // Iteration 1: writer says "draft 1"; iteration 2: writer signals DONE.
+  const adapter = scriptedAdapter([
+    { text: "research findings 1" }, // iteration 1, agent 1
+    { text: "draft 1, not done yet" }, // iteration 1, agent 2 (last → checked)
+    { text: "research findings 2" }, // iteration 2, agent 1
+    { text: "final answer — RALPH_DONE" }, // iteration 2, agent 2 → triggers stop
+  ]);
+
+  const researcher = defineAgent({
+    name: "researcher",
+    role: "Researcher",
+    goal: "find facts",
+  });
+  const writer = defineAgent({
+    name: "writer",
+    role: "Writer",
+    goal: "produce final output",
+  });
+
+  const result = await runCrew(
+    {
+      agents: [researcher, writer],
+      mode: "ralph",
+      ralph: { maxIterations: 5, completionPromise: "RALPH_DONE" },
+    },
+    "Write a one-line answer",
+    adapter,
+    new ToolRegistry(),
+  );
+
+  assert.ok(result.ralph, "ralph summary present");
+  assert.equal(result.ralph!.completed, true);
+  assert.equal(result.ralph!.stopReason, "completion_signal");
+  assert.equal(result.ralph!.iterations, 2);
+  assert.equal(result.ralph!.history.length, 2);
+  // Each iteration should record both agents.
+  assert.equal(result.ralph!.history[0].agentResults.length, 2);
+  assert.match(result.output, /RALPH_DONE/);
+});
+
+test("runCrew: ralph mode requires options.ralph", async () => {
+  const adapter = scriptedAdapter([{ text: "x" }]);
+  await assert.rejects(
+    runCrew(
+      { agents: [noopAgent], mode: "ralph" },
+      "task",
+      adapter,
+      new ToolRegistry(),
+    ),
+    /requires options\.ralph/,
+  );
+});
+
+// ─────────────────────────────────────────────────────────────────────────
 // memory.ts — fact memory ID generation
 // ─────────────────────────────────────────────────────────────────────────
 
@@ -869,7 +1097,7 @@ test("xai Responses adapter: keeps previous_response_id on user follow-up", asyn
 // ─────────────────────────────────────────────────────────────────────────
 
 import { createChatAgent } from "../src/framework/chat-agent.js";
-import type { AIAdapter, AdapterResponse } from "../src/framework/adapters/types.js";
+// AIAdapter / AdapterResponse already imported earlier in the Ralph section.
 
 /** Build a mock adapter from a sequence of scripted responses. */
 function mockAdapter(

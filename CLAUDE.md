@@ -131,6 +131,9 @@ All imports come from `"../framework/index.js"`:
 | `contextPrompt(providers[])` | Build system prompt context from connected providers |
 | `checkProviderHealth(providers[])` | Health check all connected providers |
 | `createChatAgent(config?)` | Composable chat agent (tools + memory + context + adapter) |
+| `defineAgent(def)` | Define a single-task agent with role/goal/filtered tools |
+| `runCrew(opts, task, adapter, registry)` | Run multiple agents — sequential, parallel, or `mode: "ralph"` |
+| `runRalph(agent, task, adapter, registry, opts)` | Iterate one agent until completion phrase or maxIterations |
 
 ## ESM Import Requirement
 
@@ -153,6 +156,43 @@ npm run inspect      # MCP Inspector web UI
 npm run gemini       # Chat with Gemini using your tools (needs GEMINI_API_KEY)
 npm start            # Start MCP server for Claude Desktop
 ```
+
+## Ralph Loops
+
+For tasks where iteration > one-shot (test-coverage drives, refactor sweeps,
+"fix every lint error" passes), wrap an agent in a Ralph loop:
+
+```typescript
+import { defineAgent, runRalph } from "../framework/index.js";
+
+const fixer = defineAgent({
+  name: "lint_fixer",
+  role: "Senior TypeScript engineer",
+  goal: "Reach zero lint errors across src/",
+  toolTags: ["filesystem", "shell"],
+});
+
+const result = await runRalph(fixer, `
+  Fix every lint error in src/. After each change run \`npm run lint\`.
+  When the report shows 0 errors, output <promise>LINT_DONE</promise>.
+`, adapter, registry, {
+  maxIterations: 25,                      // hard safety net
+  completionPromise: "<promise>LINT_DONE</promise>",
+  onIteration: (i, r) => console.log(`iter ${i}: ${r.toolCalls.length} tool calls`),
+});
+
+if (!result.completed) console.warn(`stopped: ${result.stopReason}`);
+```
+
+**Key idea:** each iteration calls `agent.run(task)` fresh — no in-conversation
+history carries over. State persists between iterations via tool side-effects
+(stores updated by handlers, files written, facts in memory). Wrap a unique
+marker around the completion phrase (`<promise>...</promise>`) so the model
+can't trip the check by paraphrasing earlier text.
+
+For multi-agent loops, use `runCrew({ mode: "ralph", ralph: {...} })` — runs
+the sequential crew once per iteration, checks completion against the last
+agent's output. Returns `CrewResult` with a `ralph` summary attached.
 
 ## Tool Patterns
 

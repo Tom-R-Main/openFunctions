@@ -63,8 +63,18 @@ export { createRAG } from "./rag.js";
 export type { RAG, RAGOptions, RAGDocument, RAGChunk, RAGSearchResult } from "./rag.js";
 
 // Agents
-export { defineAgent, runCrew } from "./agents.js";
-export type { AgentDefinition, Agent, AgentResult, CrewOptions, CrewResult } from "./agents.js";
+export { defineAgent, runCrew, runRalph } from "./agents.js";
+export type {
+  AgentDefinition,
+  Agent,
+  AgentResult,
+  CrewOptions,
+  CrewResult,
+  RalphOptions,
+  RalphResult,
+  RalphStopReason,
+  RalphCrewSummary,
+} from "./agents.js";
 
 // Context Providers
 export { connectProvider, contextPrompt, checkProviderHealth } from "./context.js";
