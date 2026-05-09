@@ -1,0 +1,32 @@
+{
+  "name": "@openfunctions/openclaw-openfunctions",
+  "version": "0.1.0",
+  "description": "Reference openclaw plugin demonstrating the openFunctions → openclaw bridge (toOpenclawTools)",
+  "type": "module",
+  "license": "MIT",
+  "private": true,
+  "keywords": [
+    "openclaw",
+    "openclaw-plugin",
+    "openfunctions",
+    "reference",
+    "demo"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Tom-R-Main/openFunctions.git",
+    "directory": "plugins/openclaw-openfunctions"
+  },
+  "files": [
+    "index.ts",
+    "src/",
+    "openclaw.plugin.json",
+    "README.md"
+  ],
+  "devDependencies": {
+    "@openclaw/plugin-sdk": "*"
+  },
+  "openclaw": {
+    "extensions": ["./index.ts"]
+  }
+}

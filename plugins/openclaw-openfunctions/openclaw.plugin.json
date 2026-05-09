@@ -1,0 +1,11 @@
+{
+  "id": "openfunctions-demo",
+  "contracts": {
+    "tools": ["of_calculate", "of_convert_units"]
+  },
+  "configSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {}
+  }
+}
