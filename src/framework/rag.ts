@@ -25,6 +25,7 @@
  * ```
  */
 
+import { randomUUID } from "node:crypto";
 import pg from "pg";
 const { Pool } = pg;
 import type { ToolDefinition } from "./types.js";
@@ -261,14 +262,14 @@ export async function createRAG(options: RAGOptions): Promise<RAG> {
       ON ${chunksTable} USING hnsw (embedding vector_cosine_ops) WITH (m = 16, ef_construction = 64)
   `);
 
-  let nextDocId = 1;
-  const countResult = await pool.query(`SELECT COUNT(*) FROM ${docsTable}`);
-  nextDocId = parseInt(countResult.rows[0].count) + 1;
-
   // ── RAG Implementation ────────────────────────────────────────────────
 
   async function addDocumentFn(content: string, metadata?: Record<string, unknown>): Promise<RAGDocument> {
-    const id = String(nextDocId++);
+    // UUIDs avoid the COUNT(*)+1 collision under concurrent inserts and
+    // after deletes: two parallel addDocument calls used to claim the
+    // same id, then a rollback decrement could reuse an id another call
+    // had already inserted.
+    const id = randomUUID();
     const doc: RAGDocument = {
       id,
       content,
@@ -304,7 +305,6 @@ export async function createRAG(options: RAGOptions): Promise<RAG> {
       await client.query("COMMIT");
     } catch (e) {
       await client.query("ROLLBACK");
-      nextDocId--; // Reclaim the ID
       throw e;
     } finally {
       client.release();

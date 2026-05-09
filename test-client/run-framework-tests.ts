@@ -541,6 +541,39 @@ test("registry: toAnthropicFormat / toGeminiFormat / toOpenAIFormat shape tools 
 });
 
 // ─────────────────────────────────────────────────────────────────────────
+// memory.ts — fact memory ID generation
+// ─────────────────────────────────────────────────────────────────────────
+
+import { createFactMemory } from "../src/framework/memory.js";
+
+test("fact memory: storing after deletes does not collide with existing IDs", () => {
+  const name = uniqueStoreName();
+  try {
+    const facts = createFactMemory(createStore(name));
+    const a = facts.storeFact("first");
+    const b = facts.storeFact("second");
+    const c = facts.storeFact("third");
+
+    // Delete the middle fact — old size+1 counter would have re-issued id "3"
+    // and silently overwritten c on the next storeFact.
+    facts.deleteFact(b.id);
+    const d = facts.storeFact("fourth");
+
+    const ids = new Set([a.id, b.id, c.id, d.id]);
+    assert.equal(ids.size, 4, "all four facts should have distinct IDs");
+
+    // c must still be retrievable; old bug would have overwritten it
+    const all = facts.getAllFacts();
+    assert.ok(
+      all.some((f) => f.id === c.id && f.content === "third"),
+      "third fact should not be overwritten by the post-delete store",
+    );
+  } finally {
+    removeStoreFile(name);
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────
 // chat-agent.ts — uses adapter injection (config.adapter) for unit testing
 // ─────────────────────────────────────────────────────────────────────────
 

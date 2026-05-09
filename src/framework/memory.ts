@@ -18,6 +18,7 @@
  * ```
  */
 
+import { randomUUID } from "node:crypto";
 import type { ChatMessage } from "./adapters/types.js";
 import type { ToolDefinition } from "./types.js";
 import type { Store } from "./store.js";
@@ -128,11 +129,13 @@ export function createConversationMemory(
  */
 export function createFactMemory(store?: Store<Fact>): FactMemory {
   const facts = store ?? createStore<Fact>("facts");
-  let nextId = facts.size + 1;
 
   return {
     storeFact(content: string, source?: string, tags?: string[]): Fact {
-      const id = String(nextId++);
+      // UUIDs avoid the size+1 collision: after deletes (or after a
+      // process restart with a partially-pruned store) the old counter
+      // would silently overwrite an existing fact.
+      const id = randomUUID();
       const fact: Fact = {
         id,
         content,
@@ -166,7 +169,6 @@ export function createFactMemory(store?: Store<Fact>): FactMemory {
 
     clear(): void {
       facts.clear();
-      nextId = 1;
     },
   };
 }
