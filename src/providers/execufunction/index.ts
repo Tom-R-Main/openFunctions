@@ -38,6 +38,9 @@ import {
   createPeopleTools,
   createCodebaseTools,
   createWorkItemTools,
+  createVaultTools,
+  createDatasetTools,
+  createCodeMemoryTools,
 } from "./tools.js";
 
 // ─── Options ────────────────────────────────────────────────────────────────
@@ -130,6 +133,9 @@ export function createSiftableProvider(
             ...createPeopleTools(client),
             ...createCodebaseTools(client),
             ...createWorkItemTools(client),
+            ...createVaultTools(client),
+            ...createDatasetTools(client),
+            ...createCodeMemoryTools(client),
           ];
         },
 

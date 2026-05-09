@@ -528,3 +528,330 @@ export function createWorkItemTools(client: ExfClient): ToolDefinition<any, any>
     }),
   ];
 }
+
+// ─── Vault ──────────────────────────────────────────────────────────────────
+//
+// Vault stores encrypted secrets (API keys, credentials, etc.). Read
+// operations are audit-logged on the Siftable side — surface this in
+// the tool description so models pause before invoking them.
+
+export function createVaultTools(client: ExfClient): ToolDefinition<any, any>[] {
+  const sift = client.raw();
+
+  return [
+    defineTool<{ entryType?: string; category?: string; search?: string; limit?: number }>({
+      name: "exf_vault_list",
+      description:
+        "List Siftable vault entries (metadata only — does not return secret " +
+        "payloads). Filter by entry type, category, or search string. Use " +
+        "exf_vault_read_secret to fetch the actual secret payload.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          entryType: { type: "string", description: "Filter by entry type" },
+          category: { type: "string", description: "Filter by category" },
+          search: { type: "string", description: "Substring match on name/description" },
+          limit: { type: "integer", description: "Max entries to return (default 50)" },
+        },
+      },
+      tags: ["vault"],
+      handler: async (params) => {
+        const res = await sift.listVaultEntries(params);
+        if (res.error || !res.data) {
+          return err(`listVaultEntries failed (${res.statusCode}): ${res.error}`);
+        }
+        return ok(res.data, `Found ${res.data.entries.length} vault entr(ies)`);
+      },
+    }),
+
+    defineTool<{ query: string; limit?: number }>({
+      name: "exf_vault_search",
+      description:
+        "Search vault entries by query string (metadata only — does not return " +
+        "secret payloads). Use exf_vault_read_secret to fetch the actual secret.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          query: { type: "string", description: "Search query" },
+          limit: { type: "integer", description: "Max results (default 20)" },
+        },
+        required: ["query"],
+      },
+      tags: ["vault"],
+      handler: async ({ query, limit }) => {
+        const res = await sift.searchVaultEntries(query, limit);
+        if (res.error || !res.data) {
+          return err(`searchVaultEntries failed (${res.statusCode}): ${res.error}`);
+        }
+        return ok(res.data, `Found ${res.data.entries.length} match(es)`);
+      },
+    }),
+
+    defineTool<{ entryId: string }>({
+      name: "exf_vault_read_secret",
+      description:
+        "Read the decrypted secret payload of a vault entry. " +
+        "WARNING: this call is audit-logged on the Siftable side. Only " +
+        "invoke when the user explicitly asks for a secret value, and " +
+        "never echo the payload back into a model-visible context.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          entryId: { type: "string", description: "Vault entry ID" },
+        },
+        required: ["entryId"],
+      },
+      tags: ["vault", "audit_logged"],
+      handler: async ({ entryId }) => {
+        const res = await sift.readVaultSecret(entryId);
+        if (res.error || !res.data) {
+          return err(`readVaultSecret failed (${res.statusCode}): ${res.error}`);
+        }
+        return ok(res.data, "Secret read (audit-logged)");
+      },
+    }),
+
+    defineTool<{
+      name: string;
+      payload: Record<string, string>;
+      slug?: string;
+      entryType?: string;
+      description?: string;
+      tags?: string[];
+      category?: string;
+      url?: string;
+    }>({
+      name: "exf_vault_create",
+      description:
+        "Create a new vault entry. Payload is a string→string map of " +
+        "key/value pairs (e.g. { token: 'abc' } or { username: 'x', password: 'y' }).",
+      inputSchema: {
+        type: "object",
+        properties: {
+          name: { type: "string", description: "Entry display name" },
+          payload: {
+            type: "object",
+            description: "Key/value secret payload (string values only)",
+            properties: {},
+          },
+          slug: { type: "string", description: "Stable identifier (auto-derived if omitted)" },
+          entryType: { type: "string", description: "Entry type (api_key, password, etc.)" },
+          description: { type: "string", description: "Human-readable description" },
+          tags: { type: "array", items: { type: "string" }, description: "Tags" },
+          category: { type: "string", description: "Category for grouping" },
+          url: { type: "string", description: "Associated URL" },
+        },
+        required: ["name", "payload"],
+      },
+      tags: ["vault"],
+      handler: async (params) => {
+        const res = await sift.createVaultEntry(params);
+        if (res.error || !res.data) {
+          return err(`createVaultEntry failed (${res.statusCode}): ${res.error}`);
+        }
+        return ok(res.data, `Created vault entry: ${params.name}`);
+      },
+    }),
+  ];
+}
+
+// ─── Datasets ───────────────────────────────────────────────────────────────
+//
+// Datasets are Siftable's structured data tables (notes-as-tables).
+// We wrap the highest-value subset; bucket/rank/analyze/export remain
+// reachable via client.raw() if a tool author needs them.
+
+export function createDatasetTools(client: ExfClient): ToolDefinition<any, any>[] {
+  const sift = client.raw();
+
+  return [
+    defineTool<{ limit?: number }>({
+      name: "exf_datasets_list",
+      description:
+        "List datasets in the workspace. Returns dataset IDs, titles, and " +
+        "field schemas. Pass an ID to exf_dataset_query to read rows.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          limit: { type: "integer", description: "Max datasets (default 20)" },
+        },
+      },
+      tags: ["datasets"],
+      handler: async ({ limit }) => {
+        const res = await sift.listDatasets(limit);
+        if (res.error || !res.data) {
+          return err(`listDatasets failed (${res.statusCode}): ${res.error}`);
+        }
+        return ok(res.data, `Found ${res.data.datasets.length} dataset(s)`);
+      },
+    }),
+
+    defineTool<{
+      datasetId: string;
+      filters?: Array<Record<string, unknown>>;
+      sorts?: Array<Record<string, unknown>>;
+      limit?: number;
+      cursor?: string;
+    }>({
+      name: "exf_dataset_query",
+      description:
+        "Query rows from a dataset. Supports filters, sorts, pagination via " +
+        "cursor, and a limit. Returns the matching rows plus next-cursor if " +
+        "more pages exist.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          datasetId: { type: "string", description: "Dataset ID" },
+          filters: {
+            type: "array",
+            items: { type: "object", properties: {} },
+            description: "Filter clauses (Siftable filter shape)",
+          },
+          sorts: {
+            type: "array",
+            items: { type: "object", properties: {} },
+            description: "Sort clauses (Siftable sort shape)",
+          },
+          limit: { type: "integer", description: "Max rows (default 100)" },
+          cursor: { type: "string", description: "Pagination cursor from prior call" },
+        },
+        required: ["datasetId"],
+      },
+      tags: ["datasets"],
+      handler: async ({ datasetId, ...input }) => {
+        const res = await sift.queryDataset(datasetId, input);
+        if (res.error || !res.data) {
+          return err(`queryDataset failed (${res.statusCode}): ${res.error}`);
+        }
+        return ok(res.data);
+      },
+    }),
+
+    defineTool<{ datasetId: string }>({
+      name: "exf_dataset_summarize",
+      description:
+        "Get a summary of a dataset: row count, schema, value distributions " +
+        "for low-cardinality fields. Cheaper than querying all rows when you " +
+        "just want shape + scale.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          datasetId: { type: "string", description: "Dataset ID" },
+        },
+        required: ["datasetId"],
+      },
+      tags: ["datasets"],
+      handler: async ({ datasetId }) => {
+        const res = await sift.summarizeDataset(datasetId);
+        if (res.error || !res.data) {
+          return err(`summarizeDataset failed (${res.statusCode}): ${res.error}`);
+        }
+        return ok(res.data);
+      },
+    }),
+  ];
+}
+
+// ─── Code Memories ──────────────────────────────────────────────────────────
+//
+// Code memories are durable facts about a codebase (e.g. "the rate limiter
+// in middleware/rateLimit.ts uses a leaky bucket per workspace_id, not
+// per user"). Stored once, recalled via semantic search later. Distinct
+// from RAG — these are facts the AGENT writes after learning something.
+
+export function createCodeMemoryTools(client: ExfClient): ToolDefinition<any, any>[] {
+  const sift = client.raw();
+
+  return [
+    defineTool<{
+      fact: string;
+      category: string;
+      filePath?: string;
+      repositoryId?: string;
+    }>({
+      name: "exf_code_memory_store",
+      description:
+        "Persist a fact about the codebase for future recall. Use after " +
+        "discovering something non-obvious (a hidden invariant, a workaround, " +
+        "an architectural quirk). The category groups related facts and " +
+        "filePath/repositoryId scope where the fact applies.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          fact: { type: "string", description: "The fact to remember (one sentence)" },
+          category: { type: "string", description: "Category, e.g. 'invariant', 'gotcha', 'design-decision'" },
+          filePath: { type: "string", description: "Path the fact relates to (optional)" },
+          repositoryId: { type: "string", description: "Repository scope (optional)" },
+        },
+        required: ["fact", "category"],
+      },
+      tags: ["code_memory"],
+      handler: async (params) => {
+        const res = await sift.storeCodeMemory(params);
+        if (res.error || !res.data) {
+          return err(`storeCodeMemory failed (${res.statusCode}): ${res.error}`);
+        }
+        return ok(res.data, "Code memory stored");
+      },
+    }),
+
+    defineTool<{
+      query: string;
+      category?: string;
+      repositoryId?: string;
+      scopePaths?: string[];
+      limit?: number;
+    }>({
+      name: "exf_code_memory_search",
+      description:
+        "Semantic search over stored code memories. Use when about to do " +
+        "something in an area you've worked on before — there may be a " +
+        "warning or convention already recorded.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          query: { type: "string", description: "Natural-language query" },
+          category: { type: "string", description: "Filter by category" },
+          repositoryId: { type: "string", description: "Filter by repository" },
+          scopePaths: {
+            type: "array",
+            items: { type: "string" },
+            description: "Filter to memories scoped to these paths",
+          },
+          limit: { type: "integer", description: "Max results (default 10)" },
+        },
+        required: ["query"],
+      },
+      tags: ["code_memory"],
+      handler: async (params) => {
+        const res = await sift.searchCodeMemories(params);
+        if (res.error || !res.data) {
+          return err(`searchCodeMemories failed (${res.statusCode}): ${res.error}`);
+        }
+        return ok(res.data);
+      },
+    }),
+
+    defineTool<{ memoryId: string }>({
+      name: "exf_code_memory_delete",
+      description:
+        "Delete a code memory by ID. Use when a stored fact is no longer " +
+        "true (e.g. the convention changed, the gotcha was fixed).",
+      inputSchema: {
+        type: "object",
+        properties: {
+          memoryId: { type: "string", description: "Code memory ID" },
+        },
+        required: ["memoryId"],
+      },
+      tags: ["code_memory"],
+      handler: async ({ memoryId }) => {
+        const res = await sift.deleteCodeMemory(memoryId);
+        if (res.error || !res.data) {
+          return err(`deleteCodeMemory failed (${res.statusCode}): ${res.error}`);
+        }
+        return ok(res.data, "Code memory deleted");
+      },
+    }),
+  ];
+}
