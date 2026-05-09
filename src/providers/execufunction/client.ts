@@ -24,13 +24,30 @@ export class ExfClient {
   private baseUrl: string;
   private token: string;
   private workspaceId: string | undefined;
-  private timezone: string;
+  /** IANA timezone used in the Timezone header and as the basis for local dates. */
+  readonly timezone: string;
 
   constructor(options: ExfClientOptions) {
     this.token = options.token;
     this.baseUrl = options.apiUrl?.replace(/\/+$/, "") ?? DEFAULT_API_URL;
     this.workspaceId = options.workspaceId;
     this.timezone = Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
+  }
+
+  /**
+   * Format a Date as a YYYY-MM-DD string in the client's timezone.
+   * The "today" date for an LA user at 8pm differs from UTC's "today" —
+   * use this instead of `toISOString().split("T")[0]` so date filters
+   * match the user's local day, not UTC.
+   */
+  localDate(date: Date = new Date()): string {
+    // en-CA produces the YYYY-MM-DD shape natively.
+    return new Intl.DateTimeFormat("en-CA", {
+      timeZone: this.timezone,
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+    }).format(date);
   }
 
   // ─── HTTP ───────────────────────────────────────────────────────────────

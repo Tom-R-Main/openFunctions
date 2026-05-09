@@ -75,6 +75,13 @@ export interface AgentResult {
   toolCalls: Array<{ name: string; args: Record<string, unknown>; result: ToolResult }>;
   /** Number of LLM rounds consumed */
   rounds: number;
+  /**
+   * True when the loop terminated because it hit maxRounds rather than
+   * reaching a final text response. Callers (especially crew runners)
+   * should check this flag — without it, the sentinel "(agent exceeded
+   * max rounds)" string silently becomes the next agent's context.
+   */
+  truncated?: boolean;
 }
 
 export interface CrewOptions {
@@ -191,10 +198,14 @@ export function defineAgent(definition: AgentDefinition): Agent {
         };
       }
 
+      console.warn(
+        `⚠️  agent "${definition.name}" hit maxRounds (${maxRounds}) without a final response`,
+      );
       return {
         output: "(agent exceeded max rounds)",
         toolCalls,
         rounds,
+        truncated: true,
       };
     },
   };

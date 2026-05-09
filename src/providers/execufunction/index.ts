@@ -137,12 +137,16 @@ export function createExecuFunctionProvider(
             // Context is best-effort — don't fail the prompt
           }
 
-          // Fetch upcoming events (next 24 hours)
+          // Fetch upcoming events (next 24 hours).
+          // Use the client's local TZ for the date filter so a user in
+          // PDT at 8pm doesn't see an empty calendar (UTC is already
+          // tomorrow). The Timezone header on the API call is set to
+          // the same TZ — keep them aligned.
           try {
             const now = new Date();
             const tomorrow = new Date(now.getTime() + 24 * 60 * 60 * 1000);
-            const startDate = now.toISOString().split("T")[0];
-            const endDate = tomorrow.toISOString().split("T")[0];
+            const startDate = client.localDate(now);
+            const endDate = client.localDate(tomorrow);
             const { events } = await client.listEvents({ startDate, endDate, limit: 5 });
             if (events.length > 0) {
               const lines = events.map((e) => {
