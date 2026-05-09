@@ -618,6 +618,42 @@ test("fact memory: storing after deletes does not collide with existing IDs", ()
 });
 
 // ─────────────────────────────────────────────────────────────────────────
+// workflows.ts — parallelSettled
+// ─────────────────────────────────────────────────────────────────────────
+
+import { pipe } from "../src/framework/workflows.js";
+
+test("workflow parallel: throws on first rejection (loses partial results)", async () => {
+  const wf = pipe(async (n: number) => n).parallel(
+    async (n) => n * 2,
+    async () => {
+      throw new Error("boom");
+    },
+    async (n) => n + 100,
+  );
+  await assert.rejects(wf.run(5), /boom/);
+});
+
+test("workflow parallelSettled: collects all outcomes without throwing", async () => {
+  const wf = pipe(async (n: number) => n).parallelSettled(
+    async (n) => n * 2,
+    async () => {
+      throw new Error("middle blew up");
+    },
+    async (n) => n + 100,
+  );
+
+  const results = await wf.run(5);
+  assert.equal(results.length, 3);
+  assert.deepEqual(results[0], { ok: true, value: 10 });
+  assert.equal(results[1].ok, false);
+  if (!results[1].ok) {
+    assert.match(results[1].error.message, /middle blew up/);
+  }
+  assert.deepEqual(results[2], { ok: true, value: 105 });
+});
+
+// ─────────────────────────────────────────────────────────────────────────
 // adapters/openai.ts + adapters/xai.ts — Responses API session continuity
 // ─────────────────────────────────────────────────────────────────────────
 

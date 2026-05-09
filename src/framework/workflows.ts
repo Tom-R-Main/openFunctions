@@ -26,6 +26,11 @@ import type { AIAdapter, ChatMessage } from "./adapters/types.js";
 /** A single step in a workflow — any async function from input to output */
 export type Step<TIn = unknown, TOut = unknown> = (input: TIn) => Promise<TOut>;
 
+/** Result of a single branch in parallelSettled — discriminated union per branch. */
+export type ParallelResult<T> =
+  | { ok: true; value: T }
+  | { ok: false; error: Error };
+
 /** A constructed workflow that can be executed */
 export interface Workflow<TIn = unknown, TOut = unknown> {
   /** Execute the workflow with an initial input */
@@ -34,10 +39,23 @@ export interface Workflow<TIn = unknown, TOut = unknown> {
   /** Chain another step after this workflow */
   then<TNext>(step: Step<TOut, TNext>): Workflow<TIn, TNext>;
 
-  /** Run multiple steps in parallel on the same input, collecting results as a tuple */
+  /**
+   * Run multiple steps in parallel on the same input. Throws on the first
+   * rejection, losing partial results. Use parallelSettled when steps are
+   * independent and you want to inspect failures.
+   */
   parallel<TResults extends unknown[]>(
     ...steps: { [K in keyof TResults]: Step<TOut, TResults[K]> }
   ): Workflow<TIn, TResults>;
+
+  /**
+   * Like parallel(), but each step's result is wrapped in a ParallelResult
+   * discriminated union — { ok: true, value } or { ok: false, error }. No
+   * step rejection bubbles up; callers inspect each result individually.
+   */
+  parallelSettled<TResults extends unknown[]>(
+    ...steps: { [K in keyof TResults]: Step<TOut, TResults[K]> }
+  ): Workflow<TIn, { [K in keyof TResults]: ParallelResult<TResults[K]> }>;
 
   /** Conditionally branch based on a key derived from the current output */
   branch<TNext>(
@@ -79,6 +97,29 @@ function createWorkflow<TIn, TOut>(
           steps.map((s) => (s as Step<TOut, unknown>)(intermediate)),
         );
         return results as TResults;
+      });
+    },
+
+    parallelSettled<TResults extends unknown[]>(
+      ...steps: { [K in keyof TResults]: Step<TOut, TResults[K]> }
+    ): Workflow<TIn, { [K in keyof TResults]: ParallelResult<TResults[K]> }> {
+      return createWorkflow(async (input: TIn) => {
+        const intermediate = await execute(input);
+        const settled = await Promise.allSettled(
+          steps.map((s) => (s as Step<TOut, unknown>)(intermediate)),
+        );
+        const results = settled.map((r) =>
+          r.status === "fulfilled"
+            ? { ok: true as const, value: r.value }
+            : {
+                ok: false as const,
+                error:
+                  r.reason instanceof Error
+                    ? r.reason
+                    : new Error(String(r.reason)),
+              },
+        );
+        return results as { [K in keyof TResults]: ParallelResult<TResults[K]> };
       });
     },
 

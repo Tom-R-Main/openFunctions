@@ -56,7 +56,7 @@ export type { Thread, Fact, ConversationMemory, FactMemory } from "./memory.js";
 
 // Workflows
 export { pipe, toolStep, llmStep } from "./workflows.js";
-export type { Step, Workflow } from "./workflows.js";
+export type { Step, Workflow, ParallelResult } from "./workflows.js";
 
 // RAG (Retrieval-Augmented Generation)
 export { createRAG } from "./rag.js";
