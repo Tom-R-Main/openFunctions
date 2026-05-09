@@ -124,8 +124,8 @@ export async function createChatAgent(
         memoryEnabled,
       });
 
-  // 5. Create the adapter
-  const adapter = resolveAdapter(config, systemPrompt);
+  // 5. Create the adapter (or use the one provided in config)
+  const adapter = config.adapter ?? resolveAdapter(config, systemPrompt);
 
   // 6. Return the agent
   return new ChatAgentImpl({
@@ -202,6 +202,12 @@ class ChatAgentImpl implements ChatAgent {
     const currentThreadId = options?.threadId ?? this.threadId;
     const promptOverride = options?.systemPrompt;
 
+    // Snapshot history length so we can roll back if the turn fails.
+    // Without this, a transient adapter error leaves an orphan user
+    // message in history; the next call appends another user message,
+    // and providers reject consecutive same-role turns with a 400.
+    const historyLengthBefore = this.history.length;
+
     // Add user message to history
     this.history.push({ role: "user", content: message });
 
@@ -219,56 +225,61 @@ class ChatAgentImpl implements ChatAgent {
     let maxRounds = this.maxToolRounds;
     let finalText = "";
 
-    while (maxRounds-- > 0) {
-      rounds++;
-      const response = await this.adapter.chat(this.history, this.registry, {
-        systemPrompt: promptOverride ?? this.systemPrompt,
-      });
-
-      // Tool call
-      if (response.toolCall) {
-        const { id, name, args } = response.toolCall;
-
-        // Track assistant's tool call in history
-        this.history.push({
-          role: "assistant",
-          content: JSON.stringify(args),
-          toolCallId: id,
-          toolName: name,
+    try {
+      while (maxRounds-- > 0) {
+        rounds++;
+        const response = await this.adapter.chat(this.history, this.registry, {
+          systemPrompt: promptOverride ?? this.systemPrompt,
         });
 
-        // Execute the tool
-        const result = await this.registry.execute(name, args);
-        const resultStr = JSON.stringify(result);
+        // Tool call
+        if (response.toolCall) {
+          const { id, name, args } = response.toolCall;
 
-        // Track tool result in history
-        this.history.push({
-          role: "tool",
-          content: resultStr,
-          toolCallId: id,
-          toolName: name,
-        });
+          // Track assistant's tool call in history
+          this.history.push({
+            role: "assistant",
+            content: JSON.stringify(args),
+            toolCallId: id,
+            toolName: name,
+          });
 
-        toolCalls.push({
-          name,
-          args,
-          result: {
-            success: result.success,
-            data: result.data,
-            error: result.error,
-          },
-        });
+          // Execute the tool
+          const result = await this.registry.execute(name, args);
+          const resultStr = JSON.stringify(result);
 
-        continue;
+          // Track tool result in history
+          this.history.push({
+            role: "tool",
+            content: resultStr,
+            toolCallId: id,
+            toolName: name,
+          });
+
+          toolCalls.push({
+            name,
+            args,
+            result: {
+              success: result.success,
+              data: result.data,
+              error: result.error,
+            },
+          });
+
+          continue;
+        }
+
+        // Text response — done
+        if (response.text) {
+          finalText = response.text;
+          this.history.push({ role: "assistant", content: response.text });
+        }
+
+        break;
       }
-
-      // Text response — done
-      if (response.text) {
-        finalText = response.text;
-        this.history.push({ role: "assistant", content: response.text });
-      }
-
-      break;
+    } catch (error) {
+      this.history.length = historyLengthBefore;
+      throw error;
     }
 
     if (!finalText && maxRounds < 0) {
@@ -304,6 +315,9 @@ class ChatAgentImpl implements ChatAgent {
     const currentThreadId = options?.threadId ?? this.threadId;
     const promptOverride = options?.systemPrompt;
 
+    // See chatAsync for why we snapshot before the user push.
+    const historyLengthBefore = this.history.length;
+
     this.history.push({ role: "user", content: message });
 
     if (this.conversationMemory) {
@@ -318,65 +332,70 @@ class ChatAgentImpl implements ChatAgent {
     let maxRounds = this.maxToolRounds;
     let finalText = "";
 
-    while (maxRounds-- > 0) {
-      rounds++;
-      const response = await this.adapter.chat(this.history, this.registry, {
-        systemPrompt: promptOverride ?? this.systemPrompt,
-      });
-
-      if (response.toolCall) {
-        const { id, name, args } = response.toolCall;
-
-        yield { type: "tool_call", toolCall: { name, args } };
-
-        this.history.push({
-          role: "assistant",
-          content: JSON.stringify(args),
-          toolCallId: id,
-          toolName: name,
+    try {
+      while (maxRounds-- > 0) {
+        rounds++;
+        const response = await this.adapter.chat(this.history, this.registry, {
+          systemPrompt: promptOverride ?? this.systemPrompt,
         });
 
-        const result = await this.registry.execute(name, args);
-        const resultStr = JSON.stringify(result);
+        if (response.toolCall) {
+          const { id, name, args } = response.toolCall;
 
-        this.history.push({
-          role: "tool",
-          content: resultStr,
-          toolCallId: id,
-          toolName: name,
-        });
+          yield { type: "tool_call", toolCall: { name, args } };
 
-        const toolCallEntry = {
-          name,
-          args,
-          result: {
-            success: result.success,
-            data: result.data,
-            error: result.error,
-          },
-        };
-        toolCalls.push(toolCallEntry);
+          this.history.push({
+            role: "assistant",
+            content: JSON.stringify(args),
+            toolCallId: id,
+            toolName: name,
+          });
 
-        yield {
-          type: "tool_result",
-          toolResult: {
+          const result = await this.registry.execute(name, args);
+          const resultStr = JSON.stringify(result);
+
+          this.history.push({
+            role: "tool",
+            content: resultStr,
+            toolCallId: id,
+            toolName: name,
+          });
+
+          const toolCallEntry = {
             name,
-            success: result.success,
-            data: result.data,
-            error: result.error,
-          },
-        };
+            args,
+            result: {
+              success: result.success,
+              data: result.data,
+              error: result.error,
+            },
+          };
+          toolCalls.push(toolCallEntry);
 
-        continue;
+          yield {
+            type: "tool_result",
+            toolResult: {
+              name,
+              success: result.success,
+              data: result.data,
+              error: result.error,
+            },
+          };
+
+          continue;
+        }
+
+        if (response.text) {
+          finalText = response.text;
+          this.history.push({ role: "assistant", content: response.text });
+          yield { type: "text", text: response.text };
+        }
+
+        break;
       }
-
-      if (response.text) {
-        finalText = response.text;
-        this.history.push({ role: "assistant", content: response.text });
-        yield { type: "text", text: response.text };
-      }
-
-      break;
+    } catch (error) {
+      this.history.length = historyLengthBefore;
+      throw error;
     }
 
     if (!finalText && maxRounds < 0) {

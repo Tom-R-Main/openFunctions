@@ -541,6 +541,89 @@ test("registry: toAnthropicFormat / toGeminiFormat / toOpenAIFormat shape tools 
 });
 
 // ─────────────────────────────────────────────────────────────────────────
+// chat-agent.ts — uses adapter injection (config.adapter) for unit testing
+// ─────────────────────────────────────────────────────────────────────────
+
+import { createChatAgent } from "../src/framework/chat-agent.js";
+import type { AIAdapter, AdapterResponse } from "../src/framework/adapters/types.js";
+
+/** Build a mock adapter from a sequence of scripted responses. */
+function mockAdapter(
+  responses: Array<AdapterResponse | Error>,
+  opts: { name?: string; model?: string } = {},
+): AIAdapter {
+  let i = 0;
+  return {
+    name: opts.name ?? "mock",
+    model: opts.model ?? "test-model",
+    async chat() {
+      const next = responses[i++];
+      if (next === undefined) {
+        throw new Error(`mock adapter: no more scripted responses (call ${i})`);
+      }
+      if (next instanceof Error) throw next;
+      return next;
+    },
+  };
+}
+
+test("chat-agent: adapter injection bypasses provider resolution", async () => {
+  const adapter = mockAdapter([{ text: "hello back" }]);
+  const agent = await createChatAgent({ adapter, memory: false });
+  assert.equal(agent.provider, "mock");
+  assert.equal(agent.model, "test-model");
+  const result = await agent.chat("hi");
+  assert.equal(result.text, "hello back");
+});
+
+test("chat-agent: adapter error rolls back history (no orphan user turn)", async () => {
+  const adapter = mockAdapter([new Error("simulated 429")]);
+  const agent = await createChatAgent({ adapter, memory: false });
+
+  await assert.rejects(agent.chat("hi"), /simulated 429/);
+
+  // History must be empty after a failed turn, otherwise the next call
+  // would push a second consecutive user message and providers would 400.
+  assert.equal(
+    agent.getHistory().length,
+    0,
+    "history should be empty after failed turn",
+  );
+});
+
+test("chat-agent: agent recovers cleanly after an adapter error", async () => {
+  const adapter = mockAdapter([
+    new Error("transient blip"),
+    { text: "second-call-ok" },
+  ]);
+  const agent = await createChatAgent({ adapter, memory: false });
+
+  await assert.rejects(agent.chat("first"), /transient blip/);
+  const result = await agent.chat("second");
+  assert.equal(result.text, "second-call-ok");
+
+  // History should contain exactly: user("second") + assistant("second-call-ok")
+  const hist = agent.getHistory();
+  assert.equal(hist.length, 2);
+  assert.equal(hist[0].role, "user");
+  assert.equal(hist[0].content, "second");
+  assert.equal(hist[1].role, "assistant");
+});
+
+test("chat-agent: streaming adapter error rolls back history", async () => {
+  const adapter = mockAdapter([new Error("stream blip")]);
+  const agent = await createChatAgent({ adapter, memory: false });
+
+  await assert.rejects(async () => {
+    for await (const _ of agent.chat("hi", { stream: true })) {
+      // drain
+    }
+  }, /stream blip/);
+
+  assert.equal(agent.getHistory().length, 0);
+});
+
+// ─────────────────────────────────────────────────────────────────────────
 // Custom runner — uses node:test programmatically so we can exit non-zero
 // on failure without a separate CLI flag.
 // ─────────────────────────────────────────────────────────────────────────

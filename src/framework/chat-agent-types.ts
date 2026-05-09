@@ -10,7 +10,7 @@ import type { ToolDefinition } from "./types.js";
 import type { ToolRegistry } from "./registry.js";
 import type { ContextProvider } from "./context.js";
 import type { PromptOptions } from "./prompts.js";
-import type { ChatMessage } from "./adapters/types.js";
+import type { AIAdapter, ChatMessage } from "./adapters/types.js";
 import type { Store } from "./store.js";
 
 // ─── Memory Config ─────────────────────────────────────────────────────────
@@ -60,6 +60,13 @@ export interface ChatAgentConfig {
 
   /** Model override (e.g., "gemini-2.5-flash", "gpt-5.4-pro") */
   model?: string;
+
+  /**
+   * Pre-built adapter. When set, `provider`/`model` are ignored and the
+   * built-in adapter resolution is skipped. Useful for tests (mock adapters)
+   * or for plugging in a custom AI provider.
+   */
+  adapter?: AIAdapter;
 
   /** Explicit tool list or registry (defaults to global registry) */
   tools?: ToolDefinition<any, any>[] | ToolRegistry;
