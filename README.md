@@ -314,30 +314,59 @@ The registry validates parameters before handlers run, so schema errors are surf
 - [Architecture](docs/ARCHITECTURE.md): the runtime model, filtered registries, synthetic tools, and execution paths
 - [RAG](docs/RAG.md): semantic chunking, Gemini/OpenAI embeddings, pgvector schema, HNSW search, and tool integration
 
-## Plugins
+## Integrations
 
-### ExecuFunction for OpenClaw
+### Siftable context provider
 
-The [`@openfunctions/openclaw-execufunction`](plugins/openclaw-execufunction/) plugin brings [ExecuFunction](https://execufunction.com) into the [OpenClaw](https://github.com/openclaw/openclaw) agent ecosystem — 17 tools across 6 domains:
+`src/providers/execufunction/` exposes [Siftable](https://execufunction.com)
+(formerly ExecuFunction) as an openFunctions [`ContextProvider`](src/framework/context.ts).
+The provider wraps the published [`@siftable/mcp-server`](https://www.npmjs.com/package/@siftable/mcp-server)
+SDK; 31 tools across 10 domains are exposed today (tasks, calendar,
+knowledge, projects, people, organizations, codebase, work items, vault,
+datasets, code memories). The full SDK surface (~111 methods) is reachable
+via `client.raw()` for any tool not yet wrapped.
 
-| Domain | Tools | What it does |
-|--------|-------|--------------|
-| Tasks | `exf_tasks_list`, `exf_tasks_create`, `exf_tasks_update`, `exf_tasks_complete` | Structured task management with priorities (do_now/do_next/do_later/delegate/drop) |
-| Calendar | `exf_calendar_list`, `exf_calendar_create`, `exf_calendar_update` | Event scheduling and lookup |
-| Knowledge | `exf_notes_search`, `exf_notes_create`, `exf_notes_get` | Semantic search across a knowledge base |
-| Projects | `exf_projects_list`, `exf_projects_context` | Project status and full context (tasks, notes, signals) |
-| People/CRM | `exf_people_search`, `exf_person_create`, `exf_org_search` | Contact and organization management |
-| Codebase | `exf_codebase_search`, `exf_code_who_knows` | Semantic code search and expertise tracking |
+```ts
+import { connectProvider, registry } from "openfunction/framework";
+import { createSiftableProvider } from "openfunction/providers/execufunction";
 
-Install:
+const sift = await connectProvider(createSiftableProvider(), registry);
+```
+
+Auth resolution: explicit `{ token }` argument → `SIFT_PAT` env →
+`EXF_PAT` env (legacy fallback). Same fallback chain for `SIFT_API_URL`
+and `SIFT_WORKSPACE_ID`.
+
+Run `tsx scripts/test-siftable-live.ts` (with `SIFT_PAT` set) to
+verify the provider actually round-trips against your account.
+
+### openclaw bridge
+
+`src/framework/openclaw.ts` exports `toOpenclawTools(registry)`, which
+converts an openFunctions `ToolRegistry` into the shape openclaw's
+`api.registerTool()` expects. No runtime dependency on
+`@openclaw/plugin-sdk` — the bridge defines a compatible shape locally,
+so the framework stays standalone.
+
+Two reference plugins live in `plugins/`:
+
+- **`openclaw-execufunction/`** — Siftable for openclaw. Modernized to
+  wrap `@siftable/mcp-server` directly; resolves `SIFT_PAT` first, then
+  legacy `EXF_PAT`. Plugin id is `execufunction` for back-compat with
+  existing openclaw configs.
+- **`openclaw-openfunctions/`** — Reference plugin showing the
+  `toOpenclawTools` bridge with a small hand-built registry. Marked
+  `private:true`; uses a relative import to the colocated framework
+  (read its README for what to change before publishing).
+
+Install the Siftable plugin in openclaw:
 
 ```bash
 openclaw plugins install @openfunctions/openclaw-execufunction
 ```
 
-Set `EXF_PAT` in your environment (or configure via OpenClaw plugin settings), and your OpenClaw agent gets persistent tasks, calendar awareness, semantic knowledge search, CRM, and code intelligence — backed by ExecuFunction's cloud API.
-
-See the [plugin README](plugins/openclaw-execufunction/) for details.
+Set `SIFT_PAT` (or legacy `EXF_PAT`) in the environment or via openclaw
+plugin settings.
 
 ## Project Structure
 
@@ -352,12 +381,13 @@ openFunctions/
 │   │   ├── context.ts          # Context provider interface
 │   │   └── ...                 # tool, registry, agents, memory, rag, workflows
 │   ├── providers/
-│   │   └── execufunction/      # ExecuFunction context provider (reference impl)
+│   │   └── execufunction/      # Siftable context provider (wraps @siftable/mcp-server)
 │   ├── examples/               # Reference tool patterns
 │   ├── my-tools/               # Your tools
 │   └── index.ts                # MCP entrypoint
 ├── plugins/
-│   └── openclaw-execufunction/ # ExecuFunction plugin for OpenClaw
+│   ├── openclaw-execufunction/ # Siftable plugin for openclaw (publishable)
+│   └── openclaw-openfunctions/ # Reference: toOpenclawTools bridge demo (private)
 ├── docs/                       # Architecture docs
 ├── scripts/                    # chat, create-tool, docs
 ├── test-client/                # CLI tester + test runner

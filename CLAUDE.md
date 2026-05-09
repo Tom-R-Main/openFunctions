@@ -134,6 +134,8 @@ All imports come from `"../framework/index.js"`:
 | `defineAgent(def)` | Define a single-task agent with role/goal/filtered tools |
 | `runCrew(opts, task, adapter, registry)` | Run multiple agents — sequential, parallel, or `mode: "ralph"` |
 | `runRalph(agent, task, adapter, registry, opts)` | Iterate one agent until completion phrase or maxIterations |
+| `toOpenclawTools(registry, opts?)` | Convert a ToolRegistry into openclaw's `AnyAgentTool[]` shape |
+| `toolToOpenclaw(tool, registry, opts?)` | Convert a single tool to openclaw shape |
 
 ## ESM Import Requirement
 
@@ -193,6 +195,49 @@ can't trip the check by paraphrasing earlier text.
 For multi-agent loops, use `runCrew({ mode: "ralph", ralph: {...} })` — runs
 the sequential crew once per iteration, checks completion against the last
 agent's output. Returns `CrewResult` with a `ralph` summary attached.
+
+## Integrations
+
+### Siftable provider (`src/providers/execufunction/`)
+
+Wraps `@siftable/mcp-server@^1.2.9`. Exports `createSiftableProvider()`
+(and a deprecated `createExecuFunctionProvider` alias). 31 tools across
+10 domains today; ~80 more SDK methods reachable via `client.raw()`.
+
+Auth resolution: explicit option → `SIFT_PAT` env → `EXF_PAT` env.
+Same chain for `SIFT_API_URL` and `SIFT_WORKSPACE_ID`.
+
+Live e2e test: `tsx scripts/test-siftable-live.ts` (gated on
+`SIFT_PAT`/`EXF_PAT`).
+
+### openclaw bridge (`src/framework/openclaw.ts`)
+
+`toOpenclawTools(registry, options?)` converts any openFunctions
+`ToolRegistry` into the shape openclaw's `api.registerTool()` accepts.
+Default formatter mirrors the MCP server's behavior (stringify on
+success, error block + `isError` on failure). No runtime dep on
+`@openclaw/plugin-sdk` — the shape is defined locally.
+
+Plugin authors add `@openclaw/plugin-sdk` as a devDep, then:
+
+```ts
+import { definePluginEntry } from "openclaw/plugin-sdk/plugin-entry";
+import { toOpenclawTools } from "openfunction/framework/openclaw";
+import { registry } from "./your-tools.js";
+
+export default definePluginEntry({
+  id: "your-plugin",
+  name: "Your Plugin",
+  description: "...",
+  register(api) {
+    for (const tool of toOpenclawTools(registry)) api.registerTool(tool);
+  },
+});
+```
+
+Two plugins ship in `plugins/`:
+- `openclaw-execufunction/` — Siftable for openclaw (publishable).
+- `openclaw-openfunctions/` — bridge reference (private, monorepo-only).
 
 ## Tool Patterns
 
