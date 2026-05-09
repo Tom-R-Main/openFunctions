@@ -60,6 +60,10 @@ export function createOpenAIAdapter(config?: Partial<AdapterConfig>): AIAdapter 
         input,
         tools,
         temperature: 0.7,
+        // Disable parallel tool calls — adapter only returns one tool_call
+        // per round; running multiple in parallel orphans the rest. See
+        // anthropic.ts for the same conservative fix.
+        parallel_tool_calls: false,
       };
 
       if (previousResponseId) {
@@ -176,6 +180,8 @@ function createChatCompletionsAdapter(config: ChatCompletionsConfig): AIAdapter 
         tools: registry.toOpenAIFormat(),
         temperature: 0.7,
         max_tokens: 2048,
+        // See createOpenAIAdapter — same single-call constraint.
+        parallel_tool_calls: false,
       };
 
       // Tool choice support

@@ -63,19 +63,35 @@ export function createAnthropicAdapter(config?: Partial<AdapterConfig>): AIAdapt
         }
       }
 
+      const tools = registry.toAnthropicFormat();
       const body: Record<string, unknown> = {
         model,
         max_tokens: 2048,
         system: options?.systemPrompt ?? systemPrompt,
         messages: anthropicMessages,
-        tools: registry.toAnthropicFormat(),
+        tools,
       };
 
-      // Tool choice support
-      if (options?.toolChoice === "required") {
-        body.tool_choice = { type: "any" };
-      } else if (typeof options?.toolChoice === "object") {
-        body.tool_choice = { type: "tool", name: options.toolChoice.name };
+      // Tool choice + disable parallel tool use.
+      // Without disable_parallel_tool_use, Anthropic may emit multiple
+      // tool_use blocks in one assistant turn. Our adapter only returns
+      // the first tool call (single-call AdapterResponse), which leaves
+      // the other tool_use_ids without matching tool_results — the next
+      // call then 400s with "tool_use_id was not found".
+      // Conservative fix: serialize tool calls. A future change can
+      // extend AdapterResponse to carry multiple calls per round.
+      if (tools.length > 0) {
+        const toolChoice: Record<string, unknown> = {
+          type: "auto",
+          disable_parallel_tool_use: true,
+        };
+        if (options?.toolChoice === "required") {
+          toolChoice.type = "any";
+        } else if (typeof options?.toolChoice === "object") {
+          toolChoice.type = "tool";
+          toolChoice.name = options.toolChoice.name;
+        }
+        body.tool_choice = toolChoice;
       }
 
       const response = await fetch("https://api.anthropic.com/v1/messages", {

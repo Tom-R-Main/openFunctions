@@ -64,6 +64,9 @@ export function createXAIAdapter(config?: Partial<AdapterConfig>): AIAdapter {
         input,
         tools,
         temperature: 0.7,
+        // See anthropic.ts — adapter is single-call, so disable parallel
+        // tool calls to avoid orphaned tool_use_ids on the next round.
+        parallel_tool_calls: false,
       };
 
       if (previousResponseId) {
