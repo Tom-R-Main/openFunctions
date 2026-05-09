@@ -112,20 +112,26 @@ export function createAnthropicAdapter(config?: Partial<AdapterConfig>): AIAdapt
 
       const data = await response.json();
 
-      // Check for tool use in response content blocks
-      const toolUseBlock = data.content?.find((b: any) => b.type === "tool_use");
+      // Anthropic responses can contain both a text block (preamble like
+      // "Let me check that...") AND a tool_use block in the same turn.
+      // Capture both — when both are present the text is preamble; when
+      // text is alone it's the final response.
+      const blocks: Array<{ type: string; text?: string; id?: string; name?: string; input?: unknown }> =
+        data.content ?? [];
+      const textBlock = blocks.find((b) => b.type === "text");
+      const toolUseBlock = blocks.find((b) => b.type === "tool_use");
+
       if (toolUseBlock) {
         return {
           toolCall: {
-            id: toolUseBlock.id,
-            name: toolUseBlock.name,
-            args: toolUseBlock.input ?? {},
+            id: toolUseBlock.id!,
+            name: toolUseBlock.name!,
+            args: (toolUseBlock.input as Record<string, unknown>) ?? {},
           },
+          ...(textBlock?.text && { text: textBlock.text }),
         };
       }
 
-      // Text response
-      const textBlock = data.content?.find((b: any) => b.type === "text");
       return { text: textBlock?.text ?? "(no response)" };
     },
   };

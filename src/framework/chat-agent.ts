@@ -253,6 +253,14 @@ class ChatAgentImpl implements ChatAgent {
           systemPrompt: promptOverride ?? this.systemPrompt,
         });
 
+        // Preamble text alongside a tool call (Gemini, Anthropic both
+        // commonly emit this). Don't push to history — providers reject
+        // assistant text + the next tool result message without a
+        // matching tool_use_id reference. Caller can opt-in by reading
+        // toolCalls[*].preamble — currently we just drop it on the
+        // async path since the visible final text is what matters here.
+        // The streaming path yields it for the user.
+
         // Tool call
         if (response.toolCall) {
           const { id, name, args } = response.toolCall;
@@ -290,7 +298,7 @@ class ChatAgentImpl implements ChatAgent {
           continue;
         }
 
-        // Text response — done
+        // Text-only response — done
         if (response.text) {
           finalText = response.text;
           this.history.push({ role: "assistant", content: response.text });
@@ -368,6 +376,12 @@ class ChatAgentImpl implements ChatAgent {
         const response = await this.adapter.chat(this.history, this.registry, {
           systemPrompt: promptOverride ?? this.systemPrompt,
         });
+
+        // Preamble text alongside a tool call — yield it visibly but
+        // do NOT push to history (see chatAsync comment).
+        if (response.text && response.toolCall) {
+          yield { type: "text", text: response.text };
+        }
 
         if (response.toolCall) {
           const { id, name, args } = response.toolCall;

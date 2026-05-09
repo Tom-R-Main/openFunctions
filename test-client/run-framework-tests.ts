@@ -934,6 +934,59 @@ test("chat-agent: agent recovers cleanly after an adapter error", async () => {
   assert.equal(hist[1].role, "assistant");
 });
 
+test("chat-agent: streaming yields preamble text alongside tool calls", async () => {
+  // Mock adapter that returns preamble text + tool call in one round,
+  // then a final response on round 2 after the tool result.
+  const calculator = defineTool({
+    name: "calc_double",
+    description: "doubles a number",
+    inputSchema: {
+      type: "object",
+      properties: { n: { type: "number" } },
+      required: ["n"],
+    },
+    handler: async ({ n }) => ok({ doubled: (n as number) * 2 }),
+  });
+
+  const adapter = mockAdapter([
+    {
+      text: "Let me calculate that for you.",
+      toolCall: { id: "tc_1", name: "calc_double", args: { n: 21 } },
+    },
+    { text: "The answer is 42." },
+  ]);
+
+  const agent = await createChatAgent({
+    adapter,
+    tools: [calculator],
+    memory: false,
+  });
+
+  const events: Array<{ type: string; text?: string }> = [];
+  for await (const chunk of agent.chat("double 21", { stream: true })) {
+    if (chunk.type === "text" || chunk.type === "tool_call") {
+      events.push({ type: chunk.type, text: chunk.text });
+    }
+  }
+
+  // Expect: preamble text, then tool_call, then final text
+  assert.equal(events[0].type, "text");
+  assert.equal(events[0].text, "Let me calculate that for you.");
+  assert.equal(events[1].type, "tool_call");
+  // events[2] would be tool_result (filtered out above)
+  // Find the final text (last text event)
+  const finalText = events.filter((e) => e.type === "text").pop();
+  assert.equal(finalText?.text, "The answer is 42.");
+
+  // History must NOT contain the preamble — providers reject
+  // assistant text + tool result on the next message.
+  const hist = agent.getHistory();
+  const preambleInHistory = hist.some(
+    (m) => m.role === "assistant" && m.content === "Let me calculate that for you.",
+  );
+  assert.equal(preambleInHistory, false, "preamble must not be persisted to history");
+});
+
 test("chat-agent: streaming adapter error rolls back history", async () => {
   const adapter = mockAdapter([new Error("stream blip")]);
   const agent = await createChatAgent({ adapter, memory: false });

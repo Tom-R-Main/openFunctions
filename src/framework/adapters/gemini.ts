@@ -76,7 +76,18 @@ export function createGeminiAdapter(config?: Partial<AdapterConfig>): AIAdapter 
       const candidate = data.candidates?.[0]?.content;
       if (!candidate) throw new Error("No response from Gemini");
 
+      // Gemini commonly emits a preamble text part alongside a functionCall
+      // ("I'll look that up..." then the tool call). Capture both — when
+      // both are present the text is preamble; when text is alone it's
+      // the final response.
+      const textParts =
+        candidate.parts
+          ?.filter((p: any) => typeof p.text === "string")
+          .map((p: any) => p.text as string)
+          .join("\n")
+          .trim() ?? "";
       const fnCall = candidate.parts?.find((p: any) => p.functionCall);
+
       if (fnCall?.functionCall) {
         return {
           toolCall: {
@@ -84,11 +95,11 @@ export function createGeminiAdapter(config?: Partial<AdapterConfig>): AIAdapter 
             name: fnCall.functionCall.name,
             args: fnCall.functionCall.args ?? {},
           },
+          ...(textParts && { text: textParts }),
         };
       }
 
-      const text = candidate.parts?.find((p: any) => p.text)?.text;
-      return { text: text ?? "(no response)" };
+      return { text: textParts || "(no response)" };
     },
   };
 }
