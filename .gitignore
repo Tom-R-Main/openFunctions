@@ -13,3 +13,6 @@ dist/
 .windsurf/rules/openmemory.md
 CLAUDE.md
 AGENTS.md
+
+# Local Claude Code settings
+.claude/
