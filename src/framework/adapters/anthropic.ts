@@ -5,9 +5,26 @@
  * Default model: claude-sonnet-4-6
  */
 
-import type { AIAdapter, AdapterConfig, ChatMessage, ChatOptions, AdapterResponse } from "./types.js";
+import type { AIAdapter, AdapterConfig, ChatMessage, ChatOptions, AdapterResponse, ReasoningEffort } from "./types.js";
 import type { ToolRegistry } from "../registry.js";
 import { safeJsonParse } from "./util.js";
+import { chatContentToText, imageBase64, imageMime, normalizeChatContent } from "./content.js";
+
+/**
+ * Anthropic has no `effort` knob — extended thinking is controlled by a token
+ * budget. Translate the normalized effort level to a budget; `none`/`minimal`
+ * mean "no thinking". Budgets must be >= 1024 and strictly < max_tokens.
+ */
+const THINKING_BUDGET: Record<ReasoningEffort, number> = {
+  none: 0,
+  minimal: 0,
+  low: 2048,
+  medium: 6144,
+  high: 12288,
+  xhigh: 24576,
+};
+/** Output headroom reserved for the answer on top of the thinking budget. */
+const ANSWER_HEADROOM = 8192;
 
 export function createAnthropicAdapter(config?: Partial<AdapterConfig>): AIAdapter {
   const apiKey = config?.apiKey ?? process.env.ANTHROPIC_API_KEY;
@@ -19,6 +36,8 @@ export function createAnthropicAdapter(config?: Partial<AdapterConfig>): AIAdapt
 
   const model = config?.model ?? "claude-sonnet-4-6";
   const systemPrompt = config?.systemPrompt ?? "You are a helpful assistant with access to tools. Use tools when they're relevant.";
+  const thinkingBudget = config?.reasoningEffort ? THINKING_BUDGET[config.reasoningEffort] : 0;
+  const thinkingEnabled = thinkingBudget > 0;
 
   return {
     name: config?.name ?? "Claude",
@@ -32,24 +51,30 @@ export function createAnthropicAdapter(config?: Partial<AdapterConfig>): AIAdapt
         if (msg.role === "user") {
           anthropicMessages.push({
             role: "user",
-            content: msg.content,
+            content: anthropicContent(msg.content),
           });
         } else if (msg.role === "assistant") {
           // If this assistant message preceded a tool call, we need the tool_use block
           if (msg.toolCallId && msg.toolName) {
+            const toolUse = {
+              type: "tool_use",
+              id: msg.toolCallId,
+              name: msg.toolName,
+              input: safeJsonParse(chatContentToText(msg.content), {}),
+            };
+            // Extended thinking REQUIRES the original thinking block(s) to lead
+            // the assistant message that contains the tool_use, replayed
+            // verbatim (signatures are validated). The agent loop stashes them
+            // on `thinkingBlocks`; without this the follow-up turn 400s.
+            const preserved = Array.isArray(msg.thinkingBlocks) ? msg.thinkingBlocks : [];
             anthropicMessages.push({
               role: "assistant",
-              content: [{
-                type: "tool_use",
-                id: msg.toolCallId,
-                name: msg.toolName,
-                input: safeJsonParse(msg.content, {}),
-              }],
+              content: preserved.length ? [...preserved, toolUse] : [toolUse],
             });
           } else {
             anthropicMessages.push({
               role: "assistant",
-              content: msg.content,
+              content: chatContentToText(msg.content),
             });
           }
         } else if (msg.role === "tool") {
@@ -58,7 +83,7 @@ export function createAnthropicAdapter(config?: Partial<AdapterConfig>): AIAdapt
             content: [{
               type: "tool_result",
               tool_use_id: msg.toolCallId!,
-              content: msg.content,
+              content: chatContentToText(msg.content),
             }],
           });
         }
@@ -67,11 +92,17 @@ export function createAnthropicAdapter(config?: Partial<AdapterConfig>): AIAdapt
       const tools = registry.toAnthropicFormat();
       const body: Record<string, unknown> = {
         model,
-        max_tokens: 2048,
+        // Extended thinking requires max_tokens > budget_tokens; reserve answer
+        // headroom on top of the budget when thinking is on.
+        max_tokens: thinkingEnabled ? thinkingBudget + ANSWER_HEADROOM : 2048,
         system: options?.systemPrompt ?? systemPrompt,
         messages: anthropicMessages,
         tools,
       };
+
+      if (thinkingEnabled) {
+        body.thinking = { type: "enabled", budget_tokens: thinkingBudget };
+      }
 
       // Tool choice + disable parallel tool use.
       // Without disable_parallel_tool_use, Anthropic may emit multiple
@@ -86,11 +117,16 @@ export function createAnthropicAdapter(config?: Partial<AdapterConfig>): AIAdapt
           type: "auto",
           disable_parallel_tool_use: true,
         };
-        if (options?.toolChoice === "required") {
-          toolChoice.type = "any";
-        } else if (typeof options?.toolChoice === "object") {
-          toolChoice.type = "tool";
-          toolChoice.name = options.toolChoice.name;
+        // Extended thinking is incompatible with forced tool use (type "any"
+        // or "tool") — Anthropic requires "auto". Honor the caller's forcing
+        // only when thinking is off.
+        if (!thinkingEnabled) {
+          if (options?.toolChoice === "required") {
+            toolChoice.type = "any";
+          } else if (typeof options?.toolChoice === "object") {
+            toolChoice.type = "tool";
+            toolChoice.name = options.toolChoice.name;
+          }
         }
         body.tool_choice = toolChoice;
       }
@@ -122,6 +158,11 @@ export function createAnthropicAdapter(config?: Partial<AdapterConfig>): AIAdapt
       const toolUseBlock = blocks.find((b) => b.type === "tool_use");
 
       if (toolUseBlock) {
+        // Preserve thinking/redacted_thinking blocks verbatim so the agent loop
+        // can replay them on the assistant turn that continues this tool call.
+        const thinking = blocks.filter(
+          (b) => b.type === "thinking" || b.type === "redacted_thinking"
+        );
         return {
           toolCall: {
             id: toolUseBlock.id!,
@@ -129,10 +170,27 @@ export function createAnthropicAdapter(config?: Partial<AdapterConfig>): AIAdapt
             args: (toolUseBlock.input as Record<string, unknown>) ?? {},
           },
           ...(textBlock?.text && { text: textBlock.text }),
+          ...(thinking.length && { thinking }),
         };
       }
 
       return { text: textBlock?.text ?? "(no response)" };
     },
   };
+}
+
+function anthropicContent(content: ChatMessage["content"]): unknown {
+  if (typeof content === "string") return content;
+  return normalizeChatContent(content).map((part) =>
+    part.type === "text"
+      ? { type: "text", text: part.text }
+      : {
+          type: "image",
+          source: {
+            type: "base64",
+            media_type: imageMime(part),
+            data: imageBase64(part),
+          },
+        }
+  );
 }

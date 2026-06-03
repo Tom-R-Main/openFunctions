@@ -802,6 +802,7 @@ test("openclaw bridge: toolToOpenclaw works on a single tool", async () => {
 
 import { defineAgent, runRalph, runCrew } from "../src/framework/agents.js";
 import type { AIAdapter, AdapterResponse } from "../src/framework/adapters/types.js";
+import { chatContentToText } from "../src/framework/adapters/content.js";
 
 /**
  * Like mockAdapter (defined later in this file), but defined here so the
@@ -947,7 +948,7 @@ test("runRalph: prepends iteration context unless disabled", async () => {
     model: "test",
     async chat(messages) {
       const userMsg = messages.find((m) => m.role === "user");
-      if (userMsg) taskSeen.push(userMsg.content);
+      if (userMsg) taskSeen.push(chatContentToText(userMsg.content));
       return { text: "DONE" };
     },
   };

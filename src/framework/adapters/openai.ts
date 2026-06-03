@@ -7,8 +7,9 @@
  * Any OpenAI-compatible provider can be added with createChatCompletionsAdapter().
  */
 
-import type { AIAdapter, AdapterConfig, ChatMessage, ChatOptions, AdapterResponse } from "./types.js";
+import type { AIAdapter, AdapterConfig, ChatMessage, ChatOptions, AdapterResponse, ReasoningEffort } from "./types.js";
 import type { ToolRegistry } from "../registry.js";
+import { chatContentToText, imageDataUrl, normalizeChatContent } from "./content.js";
 
 // ─── OpenAI Responses API ──────────────────────────────────────────────────
 
@@ -50,18 +51,18 @@ export function createOpenAIAdapter(config?: Partial<AdapterConfig>): AIAdapter 
           input = [{
             type: "function_call_output",
             call_id: lastMsg.toolCallId!,
-            output: lastMsg.content,
+            output: chatContentToText(lastMsg.content),
           }];
         } else {
           // User follow-up after a completed turn. Keep the
           // previous_response_id so OpenAI threads this turn onto the
           // prior conversation server-side. Previously we discarded
           // the id here, which restarted context every user message.
-          input = lastMsg.content;
+          input = responsesInputContent(lastMsg.content);
         }
       } else {
         const lastUser = messages.filter((m) => m.role === "user").pop();
-        input = lastUser?.content ?? "";
+        input = lastUser ? responsesInputContent(lastUser.content) : "";
       }
 
       const tools = registry.getAll().map((tool) => ({
@@ -145,6 +146,7 @@ interface ChatCompletionsConfig {
   apiKey: string;
   baseUrl: string;
   systemPrompt?: string;
+  reasoningEffort?: ReasoningEffort;
 }
 
 /**
@@ -152,7 +154,7 @@ interface ChatCompletionsConfig {
  * Used by OpenRouter and any other compatible provider.
  */
 function createChatCompletionsAdapter(config: ChatCompletionsConfig): AIAdapter {
-  const { name, model, apiKey, baseUrl } = config;
+  const { name, model, apiKey, baseUrl, reasoningEffort } = config;
   const sysPrompt = config.systemPrompt ?? "You are a helpful assistant with access to tools. Use tools when they're relevant.";
 
   return {
@@ -170,7 +172,7 @@ function createChatCompletionsAdapter(config: ChatCompletionsConfig): AIAdapter 
           openaiMessages.push({
             role: "tool",
             tool_call_id: msg.toolCallId!,
-            content: msg.content,
+            content: chatContentToText(msg.content),
           });
         } else if (msg.role === "assistant" && msg.toolCallId) {
           openaiMessages.push({
@@ -181,14 +183,14 @@ function createChatCompletionsAdapter(config: ChatCompletionsConfig): AIAdapter 
               type: "function",
               function: {
                 name: msg.toolName!,
-                arguments: msg.content,
+                arguments: chatContentToText(msg.content),
               },
             }],
           });
         } else {
           openaiMessages.push({
             role: msg.role,
-            content: msg.content,
+            content: chatCompletionsContent(msg.content),
           });
         }
       }
@@ -202,6 +204,13 @@ function createChatCompletionsAdapter(config: ChatCompletionsConfig): AIAdapter 
         // See createOpenAIAdapter — same single-call constraint.
         parallel_tool_calls: false,
       };
+
+      // Reasoning effort. OpenRouter's unified `reasoning` field normalizes
+      // across model families: OpenAI-style `effort`, Anthropic-style thinking
+      // budgets, and Gemini all accept `{ effort }`. `none` disables it.
+      if (reasoningEffort && reasoningEffort !== "none") {
+        body.reasoning = { effort: reasoningEffort };
+      }
 
       // Tool choice support
       if (options?.toolChoice === "required") {
@@ -244,6 +253,27 @@ function createChatCompletionsAdapter(config: ChatCompletionsConfig): AIAdapter 
   };
 }
 
+function responsesInputContent(content: ChatMessage["content"]): unknown {
+  if (typeof content === "string") return content;
+  return [{
+    role: "user",
+    content: content.map((part) =>
+      part.type === "text"
+        ? { type: "input_text", text: part.text }
+        : { type: "input_image", image_url: imageDataUrl(part), detail: part.detail ?? "auto" }
+    ),
+  }];
+}
+
+function chatCompletionsContent(content: ChatMessage["content"]): unknown {
+  if (typeof content === "string") return content;
+  return normalizeChatContent(content).map((part) =>
+    part.type === "text"
+      ? { type: "text", text: part.text }
+      : { type: "image_url", image_url: { url: imageDataUrl(part), detail: part.detail ?? "auto" } }
+  );
+}
+
 // ─── OpenRouter ────────────────────────────────────────────────────────────
 
 /**
@@ -267,6 +297,6 @@ export function createOpenRouterAdapter(config?: Partial<AdapterConfig>): AIAdap
     apiKey,
     baseUrl: "https://openrouter.ai/api/v1",
     systemPrompt: config?.systemPrompt,
+    reasoningEffort: config?.reasoningEffort,
   });
 }
-

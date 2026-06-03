@@ -22,7 +22,8 @@
 
 import * as readline from "node:readline";
 import { randomUUID } from "node:crypto";
-import type { ChatMessage } from "./adapters/types.js";
+import type { ChatContent, ChatMessage } from "./adapters/types.js";
+import { chatContentToText } from "./adapters/content.js";
 import type { AIAdapter } from "./adapters/types.js";
 import type { ToolRegistry } from "./registry.js";
 import type { ConnectedProvider } from "./context.js";
@@ -202,9 +203,9 @@ class ChatAgentImpl implements ChatAgent {
 
   // ── chat() with overloads ──────────────────────────────────────────────
 
-  chat(message: string, options?: ChatAgentChatOptions & { stream?: false }): Promise<ChatResult>;
-  chat(message: string, options: ChatAgentChatOptions & { stream: true }): AsyncIterable<ChatStreamChunk>;
-  chat(message: string, options?: ChatAgentChatOptions): Promise<ChatResult> | AsyncIterable<ChatStreamChunk> {
+  chat(message: ChatContent, options?: ChatAgentChatOptions & { stream?: false }): Promise<ChatResult>;
+  chat(message: ChatContent, options: ChatAgentChatOptions & { stream: true }): AsyncIterable<ChatStreamChunk>;
+  chat(message: ChatContent, options?: ChatAgentChatOptions): Promise<ChatResult> | AsyncIterable<ChatStreamChunk> {
     if (options?.stream) {
       return this.chatStream(message, options);
     }
@@ -212,7 +213,7 @@ class ChatAgentImpl implements ChatAgent {
   }
 
   private async chatAsync(
-    message: string,
+    message: ChatContent,
     options?: ChatAgentChatOptions,
   ): Promise<ChatResult> {
     this.switchThreadIfNeeded(options?.threadId);
@@ -232,7 +233,7 @@ class ChatAgentImpl implements ChatAgent {
     if (this.conversationMemory) {
       this.conversationMemory.addMessage(currentThreadId, {
         role: "user",
-        content: message,
+          content: chatContentToText(message),
       });
     }
 
@@ -265,12 +266,15 @@ class ChatAgentImpl implements ChatAgent {
         if (response.toolCall) {
           const { id, name, args } = response.toolCall;
 
-          // Track assistant's tool call in history
+          // Track assistant's tool call in history. Preserve any provider
+          // reasoning blocks (Anthropic thinking) so the adapter can replay
+          // them on the next request — required, or the follow-up turn 400s.
           this.history.push({
             role: "assistant",
             content: JSON.stringify(args),
             toolCallId: id,
             toolName: name,
+            ...(response.thinking && { thinkingBlocks: response.thinking }),
           });
 
           // Execute the tool
@@ -345,7 +349,7 @@ class ChatAgentImpl implements ChatAgent {
   // ── Simulated streaming ────────────────────────────────────────────────
 
   private async *chatStream(
-    message: string,
+    message: ChatContent,
     options?: ChatAgentChatOptions,
   ): AsyncIterable<ChatStreamChunk> {
     this.switchThreadIfNeeded(options?.threadId);
@@ -360,7 +364,7 @@ class ChatAgentImpl implements ChatAgent {
     if (this.conversationMemory) {
       this.conversationMemory.addMessage(currentThreadId, {
         role: "user",
-        content: message,
+          content: chatContentToText(message),
       });
     }
 
@@ -393,6 +397,7 @@ class ChatAgentImpl implements ChatAgent {
             content: JSON.stringify(args),
             toolCallId: id,
             toolName: name,
+            ...(response.thinking && { thinkingBlocks: response.thinking }),
           });
 
           const result = await this.registry.execute(name, args);

@@ -12,24 +12,70 @@ import type { ExfClient } from "./client.js";
 
 // ─── Tasks ──────────────────────────────────────────────────────────────────
 
+/** Valid task-status filter values accepted by the Siftable API. */
+const TASK_STATUSES = [
+  "inbox",
+  "next_action",
+  "in_progress",
+  "waiting_for",
+  "completed",
+  "archived",
+] as const;
+const TASK_STATUS_SET = new Set<string>(TASK_STATUSES);
+/** Common model-invented synonyms → the real enum. */
+const TASK_STATUS_SYNONYMS: Record<string, string> = {
+  pending: "next_action",
+  todo: "inbox",
+  to_do: "inbox",
+  open: "next_action",
+  active: "in_progress",
+  doing: "in_progress",
+  blocked: "waiting_for",
+  waiting: "waiting_for",
+  done: "completed",
+  complete: "completed",
+  closed: "completed",
+};
+
+/**
+ * Map a requested status to a valid enum value. Returns undefined (no filter)
+ * for unrecognized values so the API returns all tasks instead of HTTP 400.
+ */
+function normalizeTaskStatus(status?: string): string | undefined {
+  if (!status) return undefined;
+  const s = status.trim().toLowerCase();
+  if (TASK_STATUS_SET.has(s)) return s;
+  return TASK_STATUS_SYNONYMS[s];
+}
+
 export function createTaskTools(client: ExfClient): ToolDefinition<any, any>[] {
   return [
     defineTool<{ projectId?: string; status?: string; limit?: number }>({
       name: "exf_tasks_list",
       description:
-        "List tasks from ExecuFunction. Filter by project, status (pending/in_progress/completed), " +
-        "or limit. Returns task titles, priorities, statuses, and due dates.",
+        "List tasks from ExecuFunction. Filter by project, status (inbox/next_action/" +
+        "in_progress/waiting_for/completed/archived), or limit. Returns task titles, " +
+        "priorities, statuses, and due dates.",
       inputSchema: {
         type: "object",
         properties: {
           projectId: { type: "string", description: "Filter by project ID" },
-          status: { type: "string", description: 'Filter: "pending", "in_progress", or "completed"' },
+          status: {
+            type: "string",
+            enum: [...TASK_STATUSES],
+            description:
+              "Filter by status: inbox, next_action, in_progress, waiting_for, completed, archived",
+          },
           limit: { type: "integer", description: "Max tasks to return (default 20)" },
         },
       },
       tags: ["tasks"],
       handler: async (params) => {
-        const data = await client.listTasks(params);
+        // Normalize the status: map common synonyms to the real enum and drop
+        // anything unrecognized so a bad value returns all tasks instead of a
+        // 400 (the model sometimes invents "pending").
+        const normalized = { ...params, status: normalizeTaskStatus(params.status) };
+        const data = await client.listTasks(normalized);
         return ok(data, `Found ${data.tasks.length} task(s)`);
       },
     }),

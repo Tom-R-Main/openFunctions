@@ -8,6 +8,7 @@
 import type { AIAdapter, AdapterConfig, ChatMessage, ChatOptions, AdapterResponse } from "./types.js";
 import type { ToolRegistry } from "../registry.js";
 import { safeJsonParse } from "./util.js";
+import { chatContentToText, imageBase64, imageMime, normalizeChatContent } from "./content.js";
 
 export function createGeminiAdapter(config?: Partial<AdapterConfig>): AIAdapter {
   const apiKey = config?.apiKey ?? process.env.GEMINI_API_KEY;
@@ -33,14 +34,18 @@ export function createGeminiAdapter(config?: Partial<AdapterConfig>): AIAdapter 
             parts: [{
               functionResponse: {
                 name: msg.toolName!,
-                response: safeJsonParse(msg.content, { result: msg.content }),
+                response: safeJsonParse(chatContentToText(msg.content), { result: chatContentToText(msg.content) }),
               },
             }],
           };
         }
         return {
           role: msg.role === "assistant" ? "model" as const : "user" as const,
-          parts: [{ text: msg.content }],
+          parts: normalizeChatContent(msg.content).map((part) =>
+            part.type === "text"
+              ? { text: part.text }
+              : { inlineData: { mimeType: imageMime(part), data: imageBase64(part) } }
+          ),
         };
       });
 

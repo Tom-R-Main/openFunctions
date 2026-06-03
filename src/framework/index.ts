@@ -97,6 +97,7 @@ export type {
   MemoryConfig,
   PeerConfig,
 } from "./chat-agent-types.js";
+export type { ChatContent, ContentPart, TextContentPart, ImageContentPart } from "./adapters/types.js";
 
 // Test runner
 export { runTests } from "./test-runner.js";

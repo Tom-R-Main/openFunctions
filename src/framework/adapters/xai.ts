@@ -10,6 +10,7 @@
 
 import type { AIAdapter, AdapterConfig, ChatMessage, ChatOptions, AdapterResponse } from "./types.js";
 import type { ToolRegistry } from "../registry.js";
+import { chatContentToText, imageDataUrl } from "./content.js";
 
 export function createXAIAdapter(config?: Partial<AdapterConfig>): AIAdapter {
   const apiKey = config?.apiKey ?? process.env.XAI_API_KEY;
@@ -46,19 +47,19 @@ export function createXAIAdapter(config?: Partial<AdapterConfig>): AIAdapter {
           input = [{
             type: "function_call_output",
             call_id: lastMsg.toolCallId!,
-            output: lastMsg.content,
+            output: chatContentToText(lastMsg.content),
           }];
         } else {
           // User follow-up after a completed turn. Keep
           // previous_response_id so xAI threads this turn onto the
           // prior conversation server-side. Previously we discarded
           // the id here, which restarted context every user message.
-          input = lastMsg.content;
+          input = responsesInputContent(lastMsg.content);
         }
       } else {
         // First message or after reset
         const lastUser = messages.filter((m) => m.role === "user").pop();
-        input = lastUser?.content ?? "";
+        input = lastUser ? responsesInputContent(lastUser.content) : "";
       }
 
       // Build tool definitions
@@ -134,4 +135,16 @@ export function createXAIAdapter(config?: Partial<AdapterConfig>): AIAdapter {
       return { text: "(no response)" };
     },
   };
+}
+
+function responsesInputContent(content: ChatMessage["content"]): unknown {
+  if (typeof content === "string") return content;
+  return [{
+    role: "user",
+    content: content.map((part) =>
+      part.type === "text"
+        ? { type: "input_text", text: part.text }
+        : { type: "input_image", image_url: imageDataUrl(part), detail: part.detail ?? "auto" }
+    ),
+  }];
 }

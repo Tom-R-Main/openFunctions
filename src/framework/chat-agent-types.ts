@@ -10,7 +10,7 @@ import type { ToolDefinition } from "./types.js";
 import type { ToolRegistry } from "./registry.js";
 import type { ContextProvider } from "./context.js";
 import type { PromptOptions } from "./prompts.js";
-import type { AIAdapter, ChatMessage } from "./adapters/types.js";
+import type { AIAdapter, ChatContent, ChatMessage, ReasoningEffort } from "./adapters/types.js";
 import type { Store } from "./store.js";
 
 // ─── Memory Config ─────────────────────────────────────────────────────────
@@ -60,6 +60,13 @@ export interface ChatAgentConfig {
 
   /** Model override (e.g., "gemini-2.5-flash", "gpt-5.5", "gpt-5.5-2026-04-23") */
   model?: string;
+
+  /**
+   * Reasoning effort for models that support it. Forwarded to the adapter,
+   * which maps it to the provider-native control (OpenAI/OpenRouter
+   * `reasoning.effort`, Anthropic extended-thinking `budget_tokens`).
+   */
+  reasoningEffort?: ReasoningEffort;
 
   /**
    * Pre-built adapter. When set, `provider`/`model` are ignored and the
@@ -176,13 +183,13 @@ export interface ChatAgent {
   readonly model: string;
 
   /** Send a message and get a response */
-  chat(message: string, options?: ChatAgentChatOptions & { stream?: false }): Promise<ChatResult>;
+  chat(message: ChatContent, options?: ChatAgentChatOptions & { stream?: false }): Promise<ChatResult>;
 
   /** Send a message and stream the response */
-  chat(message: string, options: ChatAgentChatOptions & { stream: true }): AsyncIterable<ChatStreamChunk>;
+  chat(message: ChatContent, options: ChatAgentChatOptions & { stream: true }): AsyncIterable<ChatStreamChunk>;
 
   /** Send a message (unified signature) */
-  chat(message: string, options?: ChatAgentChatOptions): Promise<ChatResult> | AsyncIterable<ChatStreamChunk>;
+  chat(message: ChatContent, options?: ChatAgentChatOptions): Promise<ChatResult> | AsyncIterable<ChatStreamChunk>;
 
   /** Start an interactive CLI session */
   interactive(): Promise<void>;

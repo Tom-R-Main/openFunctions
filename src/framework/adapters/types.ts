@@ -7,12 +7,46 @@
 
 import type { ToolRegistry } from "../registry.js";
 
+/** Text or multimodal content in a conversation message. */
+export type TextContentPart = { type: "text"; text: string };
+export type ImageContentPart = {
+  type: "image";
+  /** MIME type such as image/png or image/jpeg. */
+  mime: string;
+  /** Base64 data URL. Prefer this at provider boundaries. */
+  dataUrl?: string;
+  /** Optional local path, for UI/protocol layers that encode at send time. */
+  path?: string;
+  /** Optional provider detail hint. */
+  detail?: "auto" | "low" | "high";
+};
+export type ContentPart = TextContentPart | ImageContentPart;
+export type ChatContent = string | ContentPart[];
+
+/**
+ * Reasoning effort levels, normalized across providers.
+ *
+ * - OpenAI / OpenRouter / Codex map these straight to their `effort` field.
+ * - Anthropic has no effort levels — adapters translate the level to an
+ *   extended-thinking `budget_tokens` value. `none`/`minimal` disable thinking.
+ */
+export type ReasoningEffort = "none" | "minimal" | "low" | "medium" | "high" | "xhigh";
+
 /** A message in the conversation */
 export interface ChatMessage {
   role: "user" | "assistant" | "tool";
-  content: string;
+  content: ChatContent;
   toolCallId?: string;
   toolName?: string;
+  /**
+   * Provider-native reasoning blocks emitted on the SAME assistant turn that
+   * produced a tool call, stored verbatim so they can be replayed on the next
+   * request. Anthropic extended thinking REQUIRES the original thinking block
+   * (with its signature) to lead the assistant message that contains the
+   * tool_use; dropping it 400s the follow-up turn. Opaque to everyone but the
+   * adapter that produced it.
+   */
+  thinkingBlocks?: unknown[];
 }
 
 /** What the adapter returns after calling the AI */
@@ -26,6 +60,13 @@ export interface AdapterResponse {
     name: string;
     args: Record<string, unknown>;
   };
+
+  /**
+   * Provider-native reasoning blocks (e.g. Anthropic thinking/redacted_thinking)
+   * accompanying a tool call. The agent loop stores these on the assistant
+   * history message so the adapter can replay them on the next request. Opaque.
+   */
+  thinking?: unknown[];
 }
 
 /** Configuration for an adapter */
@@ -41,6 +82,14 @@ export interface AdapterConfig {
 
   /** Custom system prompt (overrides the default) */
   systemPrompt?: string;
+
+  /**
+   * Reasoning effort for models that support it. Adapters translate this to
+   * their provider-native control (OpenAI/OpenRouter `reasoning.effort`,
+   * Anthropic extended-thinking `budget_tokens`). Ignored by models that
+   * don't expose reasoning.
+   */
+  reasoningEffort?: ReasoningEffort;
 }
 
 /** Options for controlling AI behavior on a per-call basis */

@@ -50,6 +50,7 @@ export function resolveAdapter(config: ChatAgentConfig, systemPrompt?: string): 
   const opts: Partial<AdapterConfig> = {};
   if (config.model) opts.model = config.model;
   if (systemPrompt) opts.systemPrompt = systemPrompt;
+  if (config.reasoningEffort) opts.reasoningEffort = config.reasoningEffort;
 
   // Explicit provider
   if (config.provider) {
