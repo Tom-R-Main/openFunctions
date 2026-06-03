@@ -423,12 +423,53 @@ class ChatAgentImpl implements ChatAgent {
 
         // Preamble text alongside a tool call — yield it visibly but
         // do NOT push to history (see chatAsync comment).
-        if (response.text && response.toolCall) {
+        if (response.text && (response.toolCall || response.toolCalls?.length)) {
           yield { type: "text", text: response.text };
         }
 
-        if (response.toolCall) {
-          const { id, name, args } = response.toolCall;
+        const calls =
+          response.toolCalls && response.toolCalls.length
+            ? response.toolCalls
+            : response.toolCall
+              ? [response.toolCall]
+              : [];
+
+        // Parallel tool calls — fan out, execute concurrently, stream one
+        // tool_call/tool_result pair per call (the TUI renders each as a line).
+        if (calls.length > 1) {
+          for (const c of calls) yield { type: "tool_call", toolCall: { name: c.name, args: c.args } };
+
+          this.history.push({
+            role: "assistant",
+            content: "",
+            toolCalls: calls,
+            ...(response.thinking && { thinkingBlocks: response.thinking }),
+          });
+
+          const results = await Promise.all(
+            calls.map((c) => this.registry.execute(c.name, c.args)),
+          );
+          for (let i = 0; i < calls.length; i++) {
+            const c = calls[i];
+            const result = results[i];
+            this.history.push({
+              role: "tool",
+              content: JSON.stringify(result),
+              toolCallId: c.id,
+              toolName: c.name,
+            });
+            toolCalls.push({
+              name: c.name,
+              args: c.args,
+              result: { success: result.success, data: result.data, error: result.error },
+            });
+            yield { type: "tool_result", toolResult: { name: c.name, success: result.success } };
+          }
+          continue;
+        }
+
+        if (calls.length === 1) {
+          const { id, name, args } = calls[0];
 
           yield { type: "tool_call", toolCall: { name, args } };
 

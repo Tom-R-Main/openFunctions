@@ -25,6 +25,12 @@ const THINKING_BUDGET: Record<ReasoningEffort, number> = {
 };
 /** Output headroom reserved for the answer on top of the thinking budget. */
 const ANSWER_HEADROOM = 8192;
+/**
+ * Anthropic REQUIRES max_tokens (unlike OpenAI/Gemini, which we omit). With no
+ * model-metadata DB to derive a per-model cap, use a generous default that
+ * won't truncate normal answers — the old 2048 cut real responses short.
+ */
+const DEFAULT_MAX_TOKENS = 8192;
 
 export function createAnthropicAdapter(config?: Partial<AdapterConfig>): AIAdapter {
   const apiKey = config?.apiKey ?? process.env.ANTHROPIC_API_KEY;
@@ -54,19 +60,30 @@ export function createAnthropicAdapter(config?: Partial<AdapterConfig>): AIAdapt
             content: anthropicContent(msg.content),
           });
         } else if (msg.role === "assistant") {
-          // If this assistant message preceded a tool call, we need the tool_use block
-          if (msg.toolCallId && msg.toolName) {
+          // Extended thinking REQUIRES the original thinking block(s) to lead
+          // the assistant message that contains the tool_use(s), replayed
+          // verbatim (signatures are validated). The agent loop stashes them on
+          // `thinkingBlocks`; without this the follow-up turn 400s.
+          const preserved = Array.isArray(msg.thinkingBlocks) ? msg.thinkingBlocks : [];
+          if (msg.toolCalls?.length) {
+            // Parallel: every tool_use block in one assistant turn.
+            const toolUses = msg.toolCalls.map((c) => ({
+              type: "tool_use",
+              id: c.id,
+              name: c.name,
+              input: c.args,
+            }));
+            anthropicMessages.push({
+              role: "assistant",
+              content: preserved.length ? [...preserved, ...toolUses] : toolUses,
+            });
+          } else if (msg.toolCallId && msg.toolName) {
             const toolUse = {
               type: "tool_use",
               id: msg.toolCallId,
               name: msg.toolName,
               input: safeJsonParse(chatContentToText(msg.content), {}),
             };
-            // Extended thinking REQUIRES the original thinking block(s) to lead
-            // the assistant message that contains the tool_use, replayed
-            // verbatim (signatures are validated). The agent loop stashes them
-            // on `thinkingBlocks`; without this the follow-up turn 400s.
-            const preserved = Array.isArray(msg.thinkingBlocks) ? msg.thinkingBlocks : [];
             anthropicMessages.push({
               role: "assistant",
               content: preserved.length ? [...preserved, toolUse] : [toolUse],
@@ -78,14 +95,25 @@ export function createAnthropicAdapter(config?: Partial<AdapterConfig>): AIAdapt
             });
           }
         } else if (msg.role === "tool") {
-          anthropicMessages.push({
-            role: "user",
-            content: [{
-              type: "tool_result",
-              tool_use_id: msg.toolCallId!,
-              content: chatContentToText(msg.content),
-            }],
-          });
+          // Anthropic requires all tool_result blocks for a turn's parallel
+          // tool_use blocks to arrive in ONE user message — consecutive
+          // user-role messages would 400. Merge into the open results message.
+          const toolResult = {
+            type: "tool_result",
+            tool_use_id: msg.toolCallId!,
+            content: chatContentToText(msg.content),
+          };
+          const last = anthropicMessages[anthropicMessages.length - 1];
+          const isOpenResultMsg =
+            last &&
+            last.role === "user" &&
+            Array.isArray(last.content) &&
+            last.content.every((b: any) => b?.type === "tool_result");
+          if (isOpenResultMsg) {
+            (last.content as unknown[]).push(toolResult);
+          } else {
+            anthropicMessages.push({ role: "user", content: [toolResult] });
+          }
         }
       }
 
@@ -94,7 +122,7 @@ export function createAnthropicAdapter(config?: Partial<AdapterConfig>): AIAdapt
         model,
         // Extended thinking requires max_tokens > budget_tokens; reserve answer
         // headroom on top of the budget when thinking is on.
-        max_tokens: thinkingEnabled ? thinkingBudget + ANSWER_HEADROOM : 2048,
+        max_tokens: thinkingEnabled ? thinkingBudget + ANSWER_HEADROOM : DEFAULT_MAX_TOKENS,
         system: options?.systemPrompt ?? systemPrompt,
         messages: anthropicMessages,
         tools,
@@ -113,20 +141,19 @@ export function createAnthropicAdapter(config?: Partial<AdapterConfig>): AIAdapt
       // Conservative fix: serialize tool calls. A future change can
       // extend AdapterResponse to carry multiple calls per round.
       if (tools.length > 0) {
-        const toolChoice: Record<string, unknown> = {
-          type: "auto",
-          disable_parallel_tool_use: true,
-        };
+        const toolChoice: Record<string, unknown> = { type: "auto" };
         // Extended thinking is incompatible with forced tool use (type "any"
-        // or "tool") — Anthropic requires "auto". Honor the caller's forcing
-        // only when thinking is off.
-        if (!thinkingEnabled) {
-          if (options?.toolChoice === "required") {
-            toolChoice.type = "any";
-          } else if (typeof options?.toolChoice === "object") {
-            toolChoice.type = "tool";
-            toolChoice.name = options.toolChoice.name;
-          }
+        // or "tool") AND with parallel tool use — Anthropic requires "auto"
+        // and serialized calls so each turn's thinking block can lead. With
+        // thinking off, allow fan-out (the loop handles parallel results) and
+        // honor the caller's forcing.
+        if (thinkingEnabled) {
+          toolChoice.disable_parallel_tool_use = true;
+        } else if (options?.toolChoice === "required") {
+          toolChoice.type = "any";
+        } else if (typeof options?.toolChoice === "object") {
+          toolChoice.type = "tool";
+          toolChoice.name = options.toolChoice.name;
         }
         body.tool_choice = toolChoice;
       }
@@ -155,23 +182,25 @@ export function createAnthropicAdapter(config?: Partial<AdapterConfig>): AIAdapt
       const blocks: Array<{ type: string; text?: string; id?: string; name?: string; input?: unknown }> =
         data.content ?? [];
       const textBlock = blocks.find((b) => b.type === "text");
-      const toolUseBlock = blocks.find((b) => b.type === "tool_use");
+      const toolUseBlocks = blocks.filter((b) => b.type === "tool_use");
 
-      if (toolUseBlock) {
+      if (toolUseBlocks.length) {
         // Preserve thinking/redacted_thinking blocks verbatim so the agent loop
-        // can replay them on the assistant turn that continues this tool call.
+        // can replay them on the assistant turn that continues these calls.
         const thinking = blocks.filter(
           (b) => b.type === "thinking" || b.type === "redacted_thinking"
         );
-        return {
-          toolCall: {
-            id: toolUseBlock.id!,
-            name: toolUseBlock.name!,
-            args: (toolUseBlock.input as Record<string, unknown>) ?? {},
-          },
+        const calls = toolUseBlocks.map((b) => ({
+          id: b.id!,
+          name: b.name!,
+          args: (b.input as Record<string, unknown>) ?? {},
+        }));
+        const extra = {
           ...(textBlock?.text && { text: textBlock.text }),
           ...(thinking.length && { thinking }),
         };
+        // A lone call stays on `toolCall`; a real fan-out uses `toolCalls`.
+        return calls.length === 1 ? { toolCall: calls[0], ...extra } : { toolCalls: calls, ...extra };
       }
 
       return { text: textBlock?.text ?? "(no response)" };

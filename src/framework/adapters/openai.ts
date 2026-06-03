@@ -174,6 +174,17 @@ function createChatCompletionsAdapter(config: ChatCompletionsConfig): AIAdapter 
             tool_call_id: msg.toolCallId!,
             content: chatContentToText(msg.content),
           });
+        } else if (msg.role === "assistant" && msg.toolCalls?.length) {
+          // Parallel tool calls — one assistant message carrying every call.
+          openaiMessages.push({
+            role: "assistant",
+            content: null,
+            tool_calls: msg.toolCalls.map((c) => ({
+              id: c.id,
+              type: "function",
+              function: { name: c.name, arguments: JSON.stringify(c.args) },
+            })),
+          });
         } else if (msg.role === "assistant" && msg.toolCallId) {
           openaiMessages.push({
             role: "assistant",
@@ -199,11 +210,19 @@ function createChatCompletionsAdapter(config: ChatCompletionsConfig): AIAdapter 
         model,
         messages: openaiMessages,
         tools: registry.toOpenAIFormat(),
-        temperature: 0.7,
-        max_tokens: 2048,
-        // See createOpenAIAdapter — same single-call constraint.
-        parallel_tool_calls: false,
+        // Allow the model to fan out — the agent loop executes parallel tool
+        // calls concurrently and returns one tool result per call id.
+        parallel_tool_calls: true,
+        // max_tokens is intentionally omitted: a hardcoded cap truncates real
+        // answers (and reasoning models spend output tokens on thinking too).
+        // Matches codex-cli / t3-code, which let the model answer to its limit.
       };
+
+      // Temperature is only meaningful for non-reasoning turns — reasoning
+      // models reject or ignore it (opencode strips it, codex never sends it).
+      if (!reasoningEffort || reasoningEffort === "none") {
+        body.temperature = 0.7;
+      }
 
       // Reasoning effort. OpenRouter's unified `reasoning` field normalizes
       // across model families: OpenAI-style `effort`, Anthropic-style thinking
@@ -237,16 +256,16 @@ function createChatCompletionsAdapter(config: ChatCompletionsConfig): AIAdapter 
       const choice = data.choices?.[0];
       if (!choice) throw new Error(`No response from ${name}`);
 
-      const toolCall = choice.message?.tool_calls?.[0];
-      if (toolCall) {
-        return {
-          toolCall: {
-            id: toolCall.id,
-            name: toolCall.function.name,
-            args: JSON.parse(toolCall.function.arguments || "{}"),
-          },
-        };
-      }
+      const rawToolCalls: any[] = choice.message?.tool_calls ?? [];
+      const parsedCalls = rawToolCalls.map((tc) => ({
+        id: tc.id,
+        name: tc.function.name,
+        args: JSON.parse(tc.function.arguments || "{}"),
+      }));
+      // A lone call stays on `toolCall` (single-call path unchanged); only a
+      // genuine fan-out uses `toolCalls`.
+      if (parsedCalls.length === 1) return { toolCall: parsedCalls[0] };
+      if (parsedCalls.length > 1) return { toolCalls: parsedCalls };
 
       return { text: choice.message?.content ?? "(no response)" };
     },
