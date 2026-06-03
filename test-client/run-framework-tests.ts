@@ -800,7 +800,7 @@ test("openclaw bridge: toolToOpenclaw works on a single tool", async () => {
 // agents.ts — Ralph loop
 // ─────────────────────────────────────────────────────────────────────────
 
-import { defineAgent, runRalph, runCrew } from "../src/framework/agents.js";
+import { defineAgent, runRalph, runCrew, runTaskCrew } from "../src/framework/agents.js";
 import type { AIAdapter, AdapterResponse } from "../src/framework/adapters/types.js";
 import { chatContentToText } from "../src/framework/adapters/content.js";
 
@@ -1023,6 +1023,220 @@ test("runCrew: ralph mode requires options.ralph", async () => {
     ),
     /requires options\.ralph/,
   );
+});
+
+// ─────────────────────────────────────────────────────────────────────────
+// runTaskCrew — typed contracts, named context, hierarchical process
+// ─────────────────────────────────────────────────────────────────────────
+
+/**
+ * Scripted adapter that also records the systemPrompt of every call, so tests
+ * can assert what context an agent was actually given (context is threaded into
+ * the system prompt by composePrompt).
+ */
+function capturingAdapter(
+  responses: Array<AdapterResponse | Error>,
+): { adapter: AIAdapter; systemPrompts: string[] } {
+  let i = 0;
+  const systemPrompts: string[] = [];
+  return {
+    systemPrompts,
+    adapter: {
+      name: "capture-mock",
+      model: "test-model",
+      async chat(_messages, _registry, options) {
+        systemPrompts.push(options?.systemPrompt ?? "");
+        const next = responses[i++];
+        if (next === undefined) throw new Error(`capturing adapter overran (call ${i})`);
+        if (next instanceof Error) throw next;
+        return next;
+      },
+    },
+  };
+}
+
+test("runTaskCrew: threads previous task output as context by default", async () => {
+  const { adapter, systemPrompts } = capturingAdapter([
+    { text: "STEP_ONE_OUTPUT" }, // research
+    { text: "final draft" }, // draft — should see STEP_ONE_OUTPUT
+  ]);
+
+  const researcher = defineAgent({ name: "researcher", role: "Researcher", goal: "find facts" });
+  const writer = defineAgent({ name: "writer", role: "Writer", goal: "write" });
+
+  const result = await runTaskCrew(
+    {
+      agents: [researcher, writer],
+      tasks: [
+        { id: "research", agent: "researcher", description: "Research the topic." },
+        { id: "draft", agent: "writer", description: "Write it up." },
+      ],
+    },
+    adapter,
+    new ToolRegistry(),
+  );
+
+  assert.equal(result.tasks.length, 2);
+  assert.equal(result.output, "final draft");
+  // The writer's system prompt must carry the researcher's output forward.
+  assert.match(systemPrompts[1], /STEP_ONE_OUTPUT/);
+});
+
+test("runTaskCrew: pulls context from named prior tasks, not just the previous one", async () => {
+  const { adapter, systemPrompts } = capturingAdapter([
+    { text: "ALPHA" }, // task a
+    { text: "BETA" }, // task b
+    { text: "done" }, // task c — context: ["a"] only
+  ]);
+
+  const agent = defineAgent({ name: "worker", role: "Worker", goal: "work" });
+
+  await runTaskCrew(
+    {
+      agents: [agent],
+      tasks: [
+        { id: "a", agent: "worker", description: "first" },
+        { id: "b", agent: "worker", description: "second" },
+        { id: "c", agent: "worker", description: "third", context: ["a"] },
+      ],
+    },
+    adapter,
+    new ToolRegistry(),
+  );
+
+  // Task c asked for "a" only — it should see ALPHA, labeled, and not BETA.
+  assert.match(systemPrompts[2], /From "a"/);
+  assert.match(systemPrompts[2], /ALPHA/);
+  assert.doesNotMatch(systemPrompts[2], /BETA/);
+});
+
+test("runTaskCrew: empty context array isolates a task", async () => {
+  const { adapter, systemPrompts } = capturingAdapter([
+    { text: "PRIOR_OUTPUT" },
+    { text: "isolated" }, // context: [] → no prior context
+  ]);
+  const agent = defineAgent({ name: "worker", role: "Worker", goal: "work" });
+
+  await runTaskCrew(
+    {
+      agents: [agent],
+      tasks: [
+        { id: "a", agent: "worker", description: "first" },
+        { id: "b", agent: "worker", description: "second", context: [] },
+      ],
+    },
+    adapter,
+    new ToolRegistry(),
+  );
+
+  assert.doesNotMatch(systemPrompts[1], /PRIOR_OUTPUT/);
+});
+
+test("runTaskCrew: outputSchema coerces output to typed data forwarded as JSON", async () => {
+  const adapter = scriptedAdapter([
+    { text: "I found three things: a, b and c." }, // research agent's prose
+    // forceStructuredOutput call → must return a tool call with the schema args
+    {
+      toolCall: {
+        id: "t1",
+        name: "structured_output",
+        args: { findings: ["a", "b", "c"] },
+      },
+    },
+  ]);
+
+  const researcher = defineAgent({ name: "researcher", role: "Researcher", goal: "find facts" });
+
+  const result = await runTaskCrew(
+    {
+      agents: [researcher],
+      tasks: [
+        {
+          id: "research",
+          agent: "researcher",
+          description: "Find three things.",
+          expectedOutput: "a list of findings",
+          outputSchema: {
+            type: "object",
+            properties: { findings: { type: "array", items: { type: "string" } } },
+            required: ["findings"],
+          },
+        },
+      ],
+    },
+    adapter,
+    new ToolRegistry(),
+  );
+
+  assert.deepEqual(result.tasks[0].data, { findings: ["a", "b", "c"] });
+  // Forwarded output is the JSON, not the prose.
+  assert.match(result.tasks[0].output, /"findings"/);
+});
+
+test("runTaskCrew: unknown agent name fails fast before any model call", async () => {
+  let called = false;
+  const adapter: AIAdapter = {
+    name: "noop",
+    model: "test",
+    async chat() {
+      called = true;
+      return { text: "x" };
+    },
+  };
+
+  await assert.rejects(
+    runTaskCrew(
+      { agents: [], tasks: [{ id: "t", agent: "ghost", description: "do" }] },
+      adapter,
+      new ToolRegistry(),
+    ),
+    /unknown agent "ghost"/,
+  );
+  assert.equal(called, false, "no model call should happen on a bad agent ref");
+});
+
+test("runTaskCrew: forward context reference throws", async () => {
+  const adapter = scriptedAdapter([{ text: "out" }]);
+  const agent = defineAgent({ name: "worker", role: "Worker", goal: "work" });
+
+  await assert.rejects(
+    runTaskCrew(
+      {
+        agents: [agent],
+        // Task "a" references "b", which hasn't run yet.
+        tasks: [{ id: "a", agent: "worker", description: "first", context: ["b"] }],
+      },
+      adapter,
+      new ToolRegistry(),
+    ),
+    /references context "b"/,
+  );
+});
+
+test("runTaskCrew: hierarchical mode delegates to workers via the manager", async () => {
+  // Manager calls delegate_to_writer (round 1), then synthesizes (round 2).
+  const adapter = scriptedAdapter([
+    {
+      toolCall: { id: "d1", name: "delegate_to_writer", args: { task: "write it" } },
+    }, // manager round 1: delegate
+    { text: "the writer's section" }, // writer agent runs to completion
+    { text: "MANAGER_SYNTHESIS" }, // manager round 2: final answer
+  ]);
+
+  const writer = defineAgent({ name: "writer", role: "Writer", goal: "write sections" });
+
+  const result = await runTaskCrew(
+    {
+      agents: [writer],
+      process: "hierarchical",
+      tasks: [{ id: "article", agent: "writer", description: "Produce an article." }],
+    },
+    adapter,
+    new ToolRegistry(),
+  );
+
+  assert.equal(result.output, "MANAGER_SYNTHESIS");
+  assert.equal(result.tasks[0].agent, "crew_manager");
 });
 
 // ─────────────────────────────────────────────────────────────────────────

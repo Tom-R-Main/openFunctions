@@ -133,6 +133,7 @@ All imports come from `"../framework/index.js"`:
 | `createChatAgent(config?)` | Composable chat agent (tools + memory + context + adapter) |
 | `defineAgent(def)` | Define a single-task agent with role/goal/filtered tools |
 | `runCrew(opts, task, adapter, registry)` | Run multiple agents — sequential, parallel, or `mode: "ralph"` |
+| `runTaskCrew(opts, adapter, registry)` | Run a typed `Task` list — `expectedOutput`/`outputSchema` contracts, named-task `context` threading, `process: "hierarchical"` manager |
 | `runRalph(agent, task, adapter, registry, opts)` | Iterate one agent until completion phrase or maxIterations |
 | `toOpenclawTools(registry, opts?)` | Convert a ToolRegistry into openclaw's `AnyAgentTool[]` shape |
 | `toolToOpenclaw(tool, registry, opts?)` | Convert a single tool to openclaw shape |

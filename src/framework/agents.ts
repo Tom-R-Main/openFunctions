@@ -31,11 +31,12 @@
  * ```
  */
 
-import type { ToolResult, ToolDefinition } from "./types.js";
+import type { ToolResult, ToolDefinition, InputSchema } from "./types.js";
 import type { AIAdapter, ChatMessage } from "./adapters/types.js";
 import { ToolRegistry } from "./registry.js";
 import { composePrompt, autoToolGuide } from "./prompts.js";
 import { defineTool, ok } from "./tool.js";
+import { forceStructuredOutput } from "./structured.js";
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 
@@ -609,4 +610,325 @@ function createDelegationTool(
       );
     },
   });
+}
+
+// ─── Task Crew ────────────────────────────────────────────────────────────────
+//
+// The bare `runCrew(task: string)` API threads only the *previous* agent's
+// output forward, as a raw string, and gives every agent the same task. A
+// `Task` crew adds three things on top, without changing that API:
+//
+//   1. Typed contracts — each task names its `expectedOutput` and may carry an
+//      `outputSchema`; when set, the agent's final answer is coerced to that
+//      schema and forwarded as JSON instead of prose (no more stringify-the-
+//      world context loss).
+//   2. Explicit context — a task pulls context from *named* prior tasks via
+//      `context: ["research", "outline"]`, so task #4 can see task #1's result,
+//      not just task #3's. Omit for the sequential default (previous task);
+//      pass `[]` for an isolated task.
+//   3. Hierarchical process — instead of a fixed order, a manager agent
+//      decomposes the brief, delegates to the right specialist, and synthesizes
+//      the result (crewAI's most-used process). Same task list, different runner.
+
+/** A unit of work in a task crew, bound to the agent that should perform it. */
+export interface CrewTask {
+  /** Stable id so later tasks can reference this output in their `context`. */
+  id: string;
+  /** What to do. Becomes the agent's task prompt. */
+  description: string;
+  /**
+   * Which agent runs it — an Agent, or a name resolved against the crew's
+   * `agents` list (and the manager, in hierarchical mode).
+   */
+  agent: Agent | string;
+  /**
+   * Human description of the desired deliverable. Appended to the prompt to
+   * steer format, and used as the extraction hint when `outputSchema` is set.
+   */
+  expectedOutput?: string;
+  /**
+   * When set, the agent's final answer is coerced to this JSON Schema and
+   * returned on `TaskResult.data`. The structured JSON (not the prose) is what
+   * downstream tasks receive as context.
+   */
+  outputSchema?: InputSchema;
+  /**
+   * Ids of earlier tasks whose outputs feed into this one as context.
+   * - Omit → sequential default: the immediately preceding task's output.
+   * - `[]` → no context (isolated task).
+   * - `["a", "c"]` → exactly those tasks' outputs, each labeled.
+   */
+  context?: string[];
+}
+
+/** Result of a single task in a task crew. */
+export interface TaskResult {
+  /** The task id. */
+  task: string;
+  /** Name of the agent that ran it. */
+  agent: string;
+  /** The agent's final text output (the JSON string when `outputSchema` set). */
+  output: string;
+  /** Parsed structured data — present only when the task had an `outputSchema`. */
+  data?: Record<string, unknown>;
+  /** The underlying agent run (tool calls, rounds, truncated flag). */
+  result: AgentResult;
+}
+
+export interface TaskCrewOptions {
+  /** The ordered task list. */
+  tasks: CrewTask[];
+  /**
+   * Agents available to the crew. Required if any task references its agent by
+   * name (rather than by Agent object), and as the worker pool in hierarchical
+   * mode.
+   */
+  agents?: Agent[];
+  /**
+   * "sequential" runs tasks in order, threading context (default).
+   * "hierarchical" hands the whole brief to a manager that delegates to the
+   *   workers via synthetic `delegate_to_*` tools and synthesizes the result.
+   */
+  process?: "sequential" | "hierarchical";
+  /**
+   * Manager agent for hierarchical mode. Defaults to a generic coordinator.
+   * Ignored in sequential mode.
+   */
+  manager?: Agent;
+}
+
+export interface TaskCrewResult {
+  /** Final output — last task (sequential) or the manager's synthesis. */
+  output: string;
+  /** Per-task results in execution order (sequential mode). */
+  tasks: TaskResult[];
+}
+
+/**
+ * Run a crew over a typed task list.
+ *
+ * @example Sequential with typed handoff
+ * ```ts
+ * const result = await runTaskCrew({
+ *   agents: [researcher, writer],
+ *   tasks: [
+ *     {
+ *       id: "research",
+ *       agent: "researcher",
+ *       description: "Research the MCP protocol.",
+ *       expectedOutput: "5 key findings with sources",
+ *       outputSchema: {
+ *         type: "object",
+ *         properties: { findings: { type: "array", items: { type: "string" } } },
+ *         required: ["findings"],
+ *       },
+ *     },
+ *     {
+ *       id: "draft",
+ *       agent: "writer",
+ *       description: "Write a 200-word explainer.",
+ *       context: ["research"],   // sees the structured findings JSON
+ *     },
+ *   ],
+ * }, adapter, registry);
+ * ```
+ *
+ * @example Hierarchical
+ * ```ts
+ * await runTaskCrew(
+ *   { agents: [researcher, writer], process: "hierarchical",
+ *     tasks: [{ id: "article", agent: "writer",
+ *               description: "Produce a researched explainer on MCP." }] },
+ *   adapter, registry,
+ * );
+ * ```
+ */
+export async function runTaskCrew(
+  options: TaskCrewOptions,
+  adapter: AIAdapter,
+  registry: ToolRegistry,
+): Promise<TaskCrewResult> {
+  const { tasks, agents = [], process = "sequential" } = options;
+  if (tasks.length === 0) throw new Error("runTaskCrew: tasks must be non-empty");
+
+  if (process === "hierarchical") {
+    return runHierarchicalTaskCrew(options, adapter, registry);
+  }
+
+  // Resolve every task's agent up front so a typo fails fast, before any
+  // model calls burn tokens.
+  const byName = new Map(agents.map((a) => [a.name, a]));
+  const resolved = tasks.map((t) => ({ task: t, agent: resolveAgent(t.agent, byName) }));
+
+  const results: TaskResult[] = [];
+  for (let i = 0; i < resolved.length; i++) {
+    const { task, agent } = resolved[i];
+    const context = buildTaskContext(task, results, i);
+    const prompt = task.expectedOutput
+      ? `${task.description}\n\nExpected output: ${task.expectedOutput}`
+      : task.description;
+
+    const run = await agent.run(prompt, adapter, registry, context);
+    results.push(await coerceTaskOutput(task, agent, run, adapter, registry));
+  }
+
+  return { output: results[results.length - 1]?.output ?? "", tasks: results };
+}
+
+/** Resolve an agent reference (object or name) against the crew roster. */
+function resolveAgent(ref: Agent | string, byName: Map<string, Agent>): Agent {
+  if (typeof ref !== "string") return ref;
+  const agent = byName.get(ref);
+  if (!agent) {
+    throw new Error(
+      `runTaskCrew: task references unknown agent "${ref}". ` +
+        `Add it to options.agents (known: ${[...byName.keys()].join(", ") || "none"}).`,
+    );
+  }
+  return agent;
+}
+
+/**
+ * Build the context string a task sees. Explicit `context` ids pull those
+ * tasks' outputs (each labeled by id); omitted `context` defaults to the
+ * immediately preceding task; `[]` yields no context.
+ */
+function buildTaskContext(
+  task: CrewTask,
+  done: TaskResult[],
+  index: number,
+): string | undefined {
+  if (task.context === undefined) {
+    return index > 0 ? done[index - 1].output : undefined;
+  }
+  if (task.context.length === 0) return undefined;
+
+  const byId = new Map(done.map((r) => [r.task, r]));
+  const blocks: string[] = [];
+  for (const id of task.context) {
+    const prior = byId.get(id);
+    if (!prior) {
+      // Reference to a task that hasn't run (forward ref or typo). Fail loud
+      // rather than silently dropping context the agent was told to rely on.
+      throw new Error(
+        `runTaskCrew: task "${task.id}" references context "${id}", which has ` +
+          `not produced output yet. Context tasks must appear earlier in the list.`,
+      );
+    }
+    blocks.push(`### From "${id}"\n${prior.output}`);
+  }
+  return blocks.join("\n\n");
+}
+
+/**
+ * Apply a task's output contract. With an `outputSchema`, coerce the agent's
+ * final answer into structured data (forwarded downstream as JSON); otherwise
+ * pass the prose through unchanged.
+ */
+async function coerceTaskOutput(
+  task: CrewTask,
+  agent: Agent,
+  run: AgentResult,
+  adapter: AIAdapter,
+  registry: ToolRegistry,
+): Promise<TaskResult> {
+  if (!task.outputSchema || run.truncated) {
+    return { task: task.id, agent: agent.name, output: run.output, result: run };
+  }
+
+  const structured = await forceStructuredOutput(adapter, {
+    schema: task.outputSchema,
+    description: task.expectedOutput,
+    prompt:
+      `Convert the following result into the required structured format. ` +
+      `Do not add or invent information.\n\n${run.output}`,
+  });
+
+  return {
+    task: task.id,
+    agent: agent.name,
+    output: JSON.stringify(structured.data, null, 2),
+    data: structured.data,
+    result: run,
+  };
+}
+
+/**
+ * Hierarchical process: a manager agent receives the rendered brief and
+ * `delegate_to_*` tools for every worker, decides who does what, and
+ * synthesizes the final answer. No fixed task order — the manager drives.
+ */
+async function runHierarchicalTaskCrew(
+  options: TaskCrewOptions,
+  adapter: AIAdapter,
+  registry: ToolRegistry,
+): Promise<TaskCrewResult> {
+  const { tasks, agents = [], manager } = options;
+  const workers = agents.length
+    ? agents
+    : // Fall back to the distinct agents named on the tasks.
+      dedupeAgents(tasks.map((t) => t.agent).filter((a): a is Agent => typeof a !== "string"));
+
+  if (workers.length === 0) {
+    throw new Error(
+      "runTaskCrew (hierarchical): no workers to delegate to. Pass options.agents.",
+    );
+  }
+
+  const boss = manager ?? defaultManager();
+
+  // The manager only delegates — give it delegation tools for each worker,
+  // not the workers' raw tools.
+  const managerRegistry = new ToolRegistry();
+  for (const worker of workers) {
+    managerRegistry.register(createDelegationTool(worker, adapter, registry));
+  }
+
+  const brief = renderBrief(tasks, workers);
+  const run = await boss.run(brief, adapter, managerRegistry);
+
+  return {
+    output: run.output,
+    tasks: [{ task: "manager", agent: boss.name, output: run.output, result: run }],
+  };
+}
+
+function dedupeAgents(agents: Agent[]): Agent[] {
+  const seen = new Map<string, Agent>();
+  for (const a of agents) if (!seen.has(a.name)) seen.set(a.name, a);
+  return [...seen.values()];
+}
+
+/** Default coordinator used when hierarchical mode gets no explicit manager. */
+function defaultManager(): Agent {
+  return defineAgent({
+    name: "crew_manager",
+    role: "Crew Manager",
+    goal:
+      "Break the brief into the right pieces, delegate each to the best-suited " +
+      "specialist, validate their work, and synthesize a single coherent result.",
+    backstory:
+      "You coordinate a team of specialists. You do not do the specialist work " +
+      "yourself — you delegate via the available tools and assemble the answer.",
+    maxRounds: 15,
+  });
+}
+
+/** Render the task list + roster into a brief the manager can act on. */
+function renderBrief(tasks: CrewTask[], workers: Agent[]): string {
+  const roster = workers
+    .map((w) => `- ${w.name}: ${w.definition.role} — ${w.definition.goal}`)
+    .join("\n");
+  const work = tasks
+    .map((t, i) => {
+      const want = t.expectedOutput ? ` (deliverable: ${t.expectedOutput})` : "";
+      return `${i + 1}. ${t.description}${want}`;
+    })
+    .join("\n");
+  return (
+    `You manage these specialists:\n${roster}\n\n` +
+    `Accomplish the following by delegating to them:\n${work}\n\n` +
+    `Delegate each piece to the most suitable specialist, then synthesize their ` +
+    `outputs into one final answer.`
+  );
 }

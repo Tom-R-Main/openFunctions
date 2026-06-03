@@ -63,7 +63,7 @@ export { createRAG } from "./rag.js";
 export type { RAG, RAGOptions, RAGDocument, RAGChunk, RAGSearchResult } from "./rag.js";
 
 // Agents
-export { defineAgent, runCrew, runRalph } from "./agents.js";
+export { defineAgent, runCrew, runRalph, runTaskCrew } from "./agents.js";
 export type {
   AgentDefinition,
   Agent,
@@ -74,6 +74,10 @@ export type {
   RalphResult,
   RalphStopReason,
   RalphCrewSummary,
+  CrewTask,
+  TaskResult,
+  TaskCrewOptions,
+  TaskCrewResult,
 } from "./agents.js";
 
 // Context Providers
