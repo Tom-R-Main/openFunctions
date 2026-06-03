@@ -262,9 +262,49 @@ class ChatAgentImpl implements ChatAgent {
         // async path since the visible final text is what matters here.
         // The streaming path yields it for the user.
 
-        // Tool call
-        if (response.toolCall) {
-          const { id, name, args } = response.toolCall;
+        const calls =
+          response.toolCalls && response.toolCalls.length
+            ? response.toolCalls
+            : response.toolCall
+              ? [response.toolCall]
+              : [];
+
+        // Parallel tool calls — one assistant turn fanned out to many tools.
+        // Execute concurrently (registry tools are independent), then append
+        // one tool result per call id. Provider reasoning blocks lead the
+        // assistant turn (Anthropic requires it).
+        if (calls.length > 1) {
+          this.history.push({
+            role: "assistant",
+            content: "",
+            toolCalls: calls,
+            ...(response.thinking && { thinkingBlocks: response.thinking }),
+          });
+
+          const results = await Promise.all(
+            calls.map((c) => this.registry.execute(c.name, c.args)),
+          );
+          for (let i = 0; i < calls.length; i++) {
+            const c = calls[i];
+            const result = results[i];
+            this.history.push({
+              role: "tool",
+              content: JSON.stringify(result),
+              toolCallId: c.id,
+              toolName: c.name,
+            });
+            toolCalls.push({
+              name: c.name,
+              args: c.args,
+              result: { success: result.success, data: result.data, error: result.error },
+            });
+          }
+          continue;
+        }
+
+        // Single tool call
+        if (calls.length === 1) {
+          const { id, name, args } = calls[0];
 
           // Track assistant's tool call in history. Preserve any provider
           // reasoning blocks (Anthropic thinking) so the adapter can replay

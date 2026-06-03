@@ -32,12 +32,27 @@ export type ChatContent = string | ContentPart[];
  */
 export type ReasoningEffort = "none" | "minimal" | "low" | "medium" | "high" | "xhigh";
 
+/** A single tool/function call requested by the model. */
+export interface ToolCall {
+  id: string;
+  name: string;
+  args: Record<string, unknown>;
+}
+
 /** A message in the conversation */
 export interface ChatMessage {
   role: "user" | "assistant" | "tool";
   content: ChatContent;
   toolCallId?: string;
   toolName?: string;
+  /**
+   * Multiple tool calls emitted in ONE assistant turn (parallel tool calling).
+   * Set instead of the single `toolCallId`/`toolName` pair when a turn fanned
+   * out. Adapters that support parallel calls reconstruct the provider-native
+   * shape from this; the matching `tool` results follow as consecutive
+   * `role:"tool"` messages (one per call id).
+   */
+  toolCalls?: ToolCall[];
   /**
    * Provider-native reasoning blocks emitted on the SAME assistant turn that
    * produced a tool call, stored verbatim so they can be replayed on the next
@@ -54,12 +69,15 @@ export interface AdapterResponse {
   /** Text response from the AI (if any) */
   text?: string;
 
-  /** Tool call the AI wants to make (if any) */
-  toolCall?: {
-    id: string;
-    name: string;
-    args: Record<string, unknown>;
-  };
+  /** Single tool call the AI wants to make (if any). */
+  toolCall?: ToolCall;
+
+  /**
+   * Multiple tool calls from one turn (parallel tool calling). Adapters set
+   * this only when the model returned more than one call; a lone call still
+   * comes back as `toolCall` so the single-call path is unchanged.
+   */
+  toolCalls?: ToolCall[];
 
   /**
    * Provider-native reasoning blocks (e.g. Anthropic thinking/redacted_thinking)
