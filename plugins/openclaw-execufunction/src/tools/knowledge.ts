@@ -40,9 +40,9 @@ export function registerKnowledgeTools(client: ExfClient) {
   return [
     {
       name: "exf_notes_search",
-      label: "ExecuFunction: Search Notes",
+      label: "Siftable: Search Notes",
       description:
-        "Semantic search across the ExecuFunction knowledge base. " +
+        "Semantic search across the Siftable knowledge base. " +
         "Finds notes, decisions, meeting notes, and references by meaning, not just keywords.",
       parameters: SearchNotesSchema,
       execute: async (_toolCallId: string, rawParams: Record<string, unknown>) => {
@@ -53,9 +53,9 @@ export function registerKnowledgeTools(client: ExfClient) {
     },
     {
       name: "exf_notes_create",
-      label: "ExecuFunction: Create Note",
+      label: "Siftable: Create Note",
       description:
-        "Create a new note in the ExecuFunction knowledge base. " +
+        "Create a new note in the Siftable knowledge base. " +
         "Supports markdown content, note types, project association, and tags.",
       parameters: CreateNoteSchema,
       execute: async (_toolCallId: string, rawParams: Record<string, unknown>) => {
@@ -70,7 +70,7 @@ export function registerKnowledgeTools(client: ExfClient) {
     },
     {
       name: "exf_notes_get",
-      label: "ExecuFunction: Get Note",
+      label: "Siftable: Get Note",
       description: "Retrieve the full content of a specific note by ID.",
       parameters: GetNoteSchema,
       execute: async (_toolCallId: string, rawParams: Record<string, unknown>) => {

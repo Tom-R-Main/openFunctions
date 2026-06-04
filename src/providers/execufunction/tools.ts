@@ -1,5 +1,5 @@
 /**
- * ExecuFunction — Tool Definitions
+ * Siftable - Tool Definitions
  *
  * Each function returns an array of ToolDefinitions for a capability domain.
  * Tools follow the framework's defineTool() pattern and are tagged for
@@ -53,7 +53,7 @@ export function createTaskTools(client: ExfClient): ToolDefinition<any, any>[] {
     defineTool<{ projectId?: string; status?: string; limit?: number }>({
       name: "exf_tasks_list",
       description:
-        "List tasks from ExecuFunction. Filter by project, status (inbox/next_action/" +
+        "List Sift tasks from Siftable. Sift tasks are human planning tasks, not executable agent work items. Filter by project, status (inbox/next_action/" +
         "in_progress/waiting_for/completed/archived), or limit. Returns task titles, " +
         "priorities, statuses, and due dates.",
       inputSchema: {
@@ -83,7 +83,7 @@ export function createTaskTools(client: ExfClient): ToolDefinition<any, any>[] {
     defineTool<{ title: string; description?: string; priority?: string; projectId?: string; dueAt?: string; acceptanceCriteria?: string }>({
       name: "exf_tasks_create",
       description:
-        "Create a new task in ExecuFunction. Supports priority levels: " +
+        "Create a new Sift task in Siftable for human planning. Supports priority levels: " +
         "do_now, do_next, do_later, delegate, drop. Acceptance criteria are semicolon-separated.",
       inputSchema: {
         type: "object",
@@ -157,7 +157,7 @@ export function createCalendarTools(client: ExfClient): ToolDefinition<any, any>
     defineTool<{ startDate: string; endDate: string; limit?: number }>({
       name: "exf_calendar_list",
       description:
-        "List calendar events from ExecuFunction for a date range. " +
+        "List calendar events from Siftable for a date range. " +
         "Returns event titles, times, locations, and descriptions.",
       inputSchema: {
         type: "object",
@@ -177,7 +177,7 @@ export function createCalendarTools(client: ExfClient): ToolDefinition<any, any>
 
     defineTool<{ title: string; startTime: string; endTime?: string; description?: string; location?: string; allDay?: boolean }>({
       name: "exf_calendar_create",
-      description: "Create a new calendar event in ExecuFunction.",
+      description: "Create a new calendar event in Siftable.",
       inputSchema: {
         type: "object",
         properties: {
@@ -232,7 +232,7 @@ export function createKnowledgeTools(client: ExfClient): ToolDefinition<any, any
     defineTool<{ query: string; limit?: number }>({
       name: "exf_notes_search",
       description:
-        "Semantic search across the ExecuFunction knowledge base. " +
+        "Semantic search across the Siftable knowledge base. " +
         "Finds notes, decisions, meeting notes, and references by meaning.",
       inputSchema: {
         type: "object",
@@ -252,7 +252,7 @@ export function createKnowledgeTools(client: ExfClient): ToolDefinition<any, any
     defineTool<{ title: string; content: string; noteType?: string; projectId?: string; tags?: string[] }>({
       name: "exf_notes_create",
       description:
-        "Create a new note in the ExecuFunction knowledge base. " +
+        "Create a new note in the Siftable knowledge base. " +
         "Supports markdown, note types (note/reference/decision/meeting/journal), and tags.",
       inputSchema: {
         type: "object",
@@ -298,7 +298,7 @@ export function createProjectTools(client: ExfClient): ToolDefinition<any, any>[
     defineTool<{ status?: string }>({
       name: "exf_projects_list",
       description:
-        "List projects from ExecuFunction. Filter by status: " +
+        "List Siftable projects. Filter by status: " +
         "planning, active, on_hold, blocked, completed, archived.",
       inputSchema: {
         type: "object",
@@ -340,7 +340,7 @@ export function createPeopleTools(client: ExfClient): ToolDefinition<any, any>[]
   return [
     defineTool<{ search: string }>({
       name: "exf_people_search",
-      description: "Search contacts in ExecuFunction CRM by name, role, or organization.",
+      description: "Search contacts in Siftable CRM by name, role, or organization.",
       inputSchema: {
         type: "object",
         properties: {
@@ -357,7 +357,7 @@ export function createPeopleTools(client: ExfClient): ToolDefinition<any, any>[]
 
     defineTool<{ name: string; email?: string; phone?: string; relationship?: string; organizationId?: string; notes?: string }>({
       name: "exf_person_create",
-      description: "Create a new contact in ExecuFunction CRM.",
+      description: "Create a new contact in Siftable CRM.",
       inputSchema: {
         type: "object",
         properties: {
@@ -379,7 +379,7 @@ export function createPeopleTools(client: ExfClient): ToolDefinition<any, any>[]
 
     defineTool<{ search: string }>({
       name: "exf_org_search",
-      description: "Search organizations in ExecuFunction CRM by name or domain.",
+      description: "Search organizations in Siftable CRM by name or domain.",
       inputSchema: {
         type: "object",
         properties: {
@@ -403,7 +403,7 @@ export function createCodebaseTools(client: ExfClient): ToolDefinition<any, any>
     defineTool<{ query: string; repositoryId?: string }>({
       name: "exf_codebase_search",
       description:
-        "Semantic search across indexed codebases in ExecuFunction. " +
+        "Semantic search across indexed codebases in Siftable. " +
         "Finds relevant code snippets, files, and functions by meaning.",
       inputSchema: {
         type: "object",

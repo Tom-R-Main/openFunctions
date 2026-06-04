@@ -6,7 +6,7 @@
   "uiHints": {
     "apiUrl": {
       "label": "Siftable API URL",
-      "help": "Base URL for the Siftable API (default: https://execufunction.com)."
+      "help": "Base URL for the Siftable API (default: https://siftable.io)."
     },
     "token": {
       "label": "Personal Access Token",

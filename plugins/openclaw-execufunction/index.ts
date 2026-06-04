@@ -9,9 +9,9 @@ import { registerCodebaseTools } from "./src/tools/codebase.js";
 
 export default definePluginEntry({
   id: "execufunction",
-  name: "ExecuFunction",
+  name: "Siftable",
   description:
-    "Connect your agent to ExecuFunction for tasks, calendar, knowledge, projects, CRM, and codebase tools.",
+    "Connect your agent to Siftable for Sift tasks, calendar, knowledge, projects, CRM, and codebase tools.",
   register(api) {
     // Defer client construction until a tool is actually called.
     // This allows the plugin to load even before the user sets EXF_PAT.

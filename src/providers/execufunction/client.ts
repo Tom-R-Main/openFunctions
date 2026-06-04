@@ -20,7 +20,7 @@
 
 import { SiftClient } from "@siftable/mcp-server/exfClient";
 
-const DEFAULT_API_URL = "https://execufunction.com";
+const DEFAULT_API_URL = "https://siftable.io";
 
 export interface ExfClientOptions {
   /** Siftable API base URL */

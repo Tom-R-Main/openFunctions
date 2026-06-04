@@ -64,9 +64,9 @@ export function registerTaskTools(client: ExfClient) {
   return [
     {
       name: "exf_tasks_list",
-      label: "ExecuFunction: List Tasks",
+      label: "Siftable: List Sift Tasks",
       description:
-        "List tasks from ExecuFunction. Filter by project, status, or limit. " +
+        "List Sift tasks from Siftable. Sift tasks are human planning tasks, not executable agent work items. Filter by project, status, or limit. " +
         "Returns task titles, priorities, statuses, and due dates.",
       parameters: ListTasksSchema,
       execute: async (_toolCallId: string, rawParams: Record<string, unknown>) => {
@@ -78,9 +78,9 @@ export function registerTaskTools(client: ExfClient) {
     },
     {
       name: "exf_tasks_create",
-      label: "ExecuFunction: Create Task",
+      label: "Siftable: Create Sift Task",
       description:
-        "Create a new task in ExecuFunction. Supports title, description, priority " +
+        "Create a new Sift task in Siftable. Supports title, description, priority " +
         "(do_now/do_next/do_later/delegate/drop), project assignment, due dates, " +
         "and acceptance criteria.",
       parameters: CreateTaskSchema,
@@ -98,7 +98,7 @@ export function registerTaskTools(client: ExfClient) {
     },
     {
       name: "exf_tasks_update",
-      label: "ExecuFunction: Update Task",
+      label: "Siftable: Update Sift Task",
       description: "Update an existing task's title, description, priority, status, or due date.",
       parameters: UpdateTaskSchema,
       execute: async (_toolCallId: string, rawParams: Record<string, unknown>) => {
@@ -113,7 +113,7 @@ export function registerTaskTools(client: ExfClient) {
     },
     {
       name: "exf_tasks_complete",
-      label: "ExecuFunction: Complete Task",
+      label: "Siftable: Complete Sift Task",
       description: "Mark a task as completed, optionally with completion notes.",
       parameters: CompleteTaskSchema,
       execute: async (_toolCallId: string, rawParams: Record<string, unknown>) => {

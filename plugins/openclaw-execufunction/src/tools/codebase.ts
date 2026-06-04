@@ -29,9 +29,9 @@ export function registerCodebaseTools(client: ExfClient) {
   return [
     {
       name: "exf_codebase_search",
-      label: "ExecuFunction: Code Search",
+      label: "Siftable: Code Search",
       description:
-        "Semantic search across indexed codebases in ExecuFunction. " +
+        "Semantic search across indexed codebases in Siftable. " +
         "Finds relevant code snippets, files, and functions by meaning.",
       parameters: CodeSearchSchema,
       execute: async (_toolCallId: string, rawParams: Record<string, unknown>) => {
@@ -42,7 +42,7 @@ export function registerCodebaseTools(client: ExfClient) {
     },
     {
       name: "exf_code_who_knows",
-      label: "ExecuFunction: Who Knows",
+      label: "Siftable: Who Knows",
       description:
         "Find who has expertise in a specific code area. " +
         "Returns developers ranked by their knowledge of the queried topic, based on commit history and code ownership.",

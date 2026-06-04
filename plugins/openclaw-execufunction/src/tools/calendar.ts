@@ -41,9 +41,9 @@ export function registerCalendarTools(client: ExfClient) {
   return [
     {
       name: "exf_calendar_list",
-      label: "ExecuFunction: List Events",
+      label: "Siftable: List Events",
       description:
-        "List calendar events from ExecuFunction for a date range. " +
+        "List calendar events from Siftable for a date range. " +
         "Returns event titles, times, locations, and descriptions.",
       parameters: ListEventsSchema,
       execute: async (_toolCallId: string, rawParams: Record<string, unknown>) => {
@@ -55,8 +55,8 @@ export function registerCalendarTools(client: ExfClient) {
     },
     {
       name: "exf_calendar_create",
-      label: "ExecuFunction: Create Event",
-      description: "Create a new calendar event in ExecuFunction.",
+      label: "Siftable: Create Event",
+      description: "Create a new calendar event in Siftable.",
       parameters: CreateEventSchema,
       execute: async (_toolCallId: string, rawParams: Record<string, unknown>) => {
         const title = readStringParam(rawParams, "title", { required: true });
@@ -72,7 +72,7 @@ export function registerCalendarTools(client: ExfClient) {
     },
     {
       name: "exf_calendar_update",
-      label: "ExecuFunction: Update Event",
+      label: "Siftable: Update Event",
       description: "Update an existing calendar event's title, time, description, or location.",
       parameters: UpdateEventSchema,
       execute: async (_toolCallId: string, rawParams: Record<string, unknown>) => {

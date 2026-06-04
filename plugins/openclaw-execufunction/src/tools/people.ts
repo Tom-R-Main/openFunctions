@@ -40,9 +40,9 @@ export function registerPeopleTools(client: ExfClient) {
   return [
     {
       name: "exf_people_search",
-      label: "ExecuFunction: Search People",
+      label: "Siftable: Search People",
       description:
-        "Search contacts in ExecuFunction CRM by name, role, or organization. " +
+        "Search contacts in Siftable CRM by name, role, or organization. " +
         "Returns names, emails, relationships, and organization associations.",
       parameters: SearchPeopleSchema,
       execute: async (_toolCallId: string, rawParams: Record<string, unknown>) => {
@@ -52,8 +52,8 @@ export function registerPeopleTools(client: ExfClient) {
     },
     {
       name: "exf_person_create",
-      label: "ExecuFunction: Create Person",
-      description: "Create a new contact in ExecuFunction CRM with name, email, phone, and relationship.",
+      label: "Siftable: Create Person",
+      description: "Create a new contact in Siftable CRM with name, email, phone, and relationship.",
       parameters: CreatePersonSchema,
       execute: async (_toolCallId: string, rawParams: Record<string, unknown>) => {
         const name = readStringParam(rawParams, "name", { required: true });
@@ -69,8 +69,8 @@ export function registerPeopleTools(client: ExfClient) {
     },
     {
       name: "exf_org_search",
-      label: "ExecuFunction: Search Organizations",
-      description: "Search organizations in ExecuFunction CRM by name or domain.",
+      label: "Siftable: Search Organizations",
+      description: "Search organizations in Siftable CRM by name or domain.",
       parameters: SearchOrgsSchema,
       execute: async (_toolCallId: string, rawParams: Record<string, unknown>) => {
         const search = readStringParam(rawParams, "search", { required: true });

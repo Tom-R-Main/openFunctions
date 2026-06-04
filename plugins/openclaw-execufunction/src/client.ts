@@ -11,7 +11,7 @@ import { SiftClient } from "@siftable/mcp-server/exfClient";
 import type { OpenClawConfig } from "openclaw/plugin-sdk/config-runtime";
 import { normalizeSecretInput } from "openclaw/plugin-sdk/secret-input";
 
-const DEFAULT_API_URL = "https://execufunction.com";
+const DEFAULT_API_URL = "https://siftable.io";
 
 type PluginEntryConfig = {
   apiUrl?: string;

@@ -27,9 +27,9 @@ export function registerProjectTools(client: ExfClient) {
   return [
     {
       name: "exf_projects_list",
-      label: "ExecuFunction: List Projects",
+      label: "Siftable: List Projects",
       description:
-        "List projects from ExecuFunction. Returns project names, statuses, summaries, and dates.",
+        "List projects from Siftable. Returns project names, statuses, summaries, and dates.",
       parameters: ListProjectsSchema,
       execute: async (_toolCallId: string, rawParams: Record<string, unknown>) => {
         const status = readStringParam(rawParams, "status");
@@ -38,7 +38,7 @@ export function registerProjectTools(client: ExfClient) {
     },
     {
       name: "exf_projects_context",
-      label: "ExecuFunction: Project Context",
+      label: "Siftable: Project Context",
       description:
         "Get full context for a project: active tasks, recent notes, signals, and status. " +
         "Useful for understanding what's happening in a project before taking action.",

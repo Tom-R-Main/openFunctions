@@ -46,7 +46,7 @@ import {
 // ─── Options ────────────────────────────────────────────────────────────────
 
 export interface SiftableProviderOptions {
-  /** Siftable API base URL (default: https://execufunction.com) */
+  /** Siftable API base URL (default: https://siftable.io) */
   apiUrl?: string;
   /** Personal Access Token. Falls back to SIFT_PAT, then EXF_PAT. */
   token?: string;
@@ -63,7 +63,7 @@ const METADATA: ContextProviderMetadata = {
   id: "siftable",
   name: "Siftable",
   description:
-    "Tasks, projects, calendar, knowledge, CRM, and codebase — " +
+    "Sift tasks, projects, calendar, knowledge, CRM, and codebase - " +
     "structured cloud context for AI agents",
   capabilities: [
     "tasks",
@@ -77,7 +77,7 @@ const METADATA: ContextProviderMetadata = {
   auth: {
     kind: "pat",
     envVar: "SIFT_PAT",
-    setupUrl: "https://execufunction.com/settings/tokens",
+    setupUrl: "https://siftable.io/settings/tokens",
     instructions:
       "Run 'sift auth login' (or set SIFT_PAT). Legacy EXF_PAT also works.",
   },
@@ -107,7 +107,7 @@ export function createSiftableProvider(
         throw new Error(
           "Siftable requires a Personal Access Token.\n" +
             "Set SIFT_PAT (or legacy EXF_PAT) in your environment, or pass { token: '...' }.\n" +
-            "Generate a token at https://execufunction.com/settings/tokens",
+            "Generate a token at https://siftable.io/settings/tokens",
         );
       }
 
@@ -140,9 +140,14 @@ export function createSiftableProvider(
         },
 
         async buildContext(): Promise<string | undefined> {
-          const sections: string[] = [];
+          const sections: string[] = [
+            "### Assistant Grounding\n" +
+              "- You are connected to Siftable as the Siftable assistant.\n" +
+              "- Sift tasks are human planning tasks managed by `sift tasks`; use task tools for to-dos, planning, priorities, due dates, and project-linked action items.\n" +
+              "- Work items are the separate executable agent queue managed by `sift work`; use work-item tools only when the user is asking about agent-executable queue work.",
+          ];
 
-          // Fetch active tasks
+          // Fetch active Sift tasks
           try {
             const { tasks } = await client.listTasks({ status: "in_progress", limit: 10 });
             if (tasks.length > 0) {
@@ -151,7 +156,7 @@ export function createSiftableProvider(
                 const project = t.projectName ? ` — ${t.projectName}` : "";
                 return `- ${priority} ${t.title}${project}`.trim();
               });
-              sections.push(`### Active Tasks (${tasks.length})\n${lines.join("\n")}`);
+              sections.push(`### Active Sift Tasks (${tasks.length})\n${lines.join("\n")}`);
             }
           } catch {
             // Context is best-effort — don't fail the prompt
@@ -192,9 +197,7 @@ export function createSiftableProvider(
             // Best-effort
           }
 
-          if (sections.length === 0) return undefined;
-
-          return `## Your Current Context (via Siftable)\n\n${sections.join("\n\n")}`;
+          return `## Your Current Siftable Context\n\n${sections.join("\n\n")}`;
         },
 
         async healthCheck() {

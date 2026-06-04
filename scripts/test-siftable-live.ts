@@ -10,7 +10,7 @@
  *
  * Run: tsx scripts/test-siftable-live.ts
  *   Requires: SIFT_PAT in env (or .env), or legacy EXF_PAT
- *   Optional: SIFT_API_URL (defaults to https://execufunction.com)
+ *   Optional: SIFT_API_URL (defaults to https://siftable.io)
  *             SIFT_WORKSPACE_ID
  */
 
@@ -32,7 +32,7 @@ console.log("╚═════════════════════�
 const apiUrl =
   process.env.SIFT_API_URL ??
   process.env.EXF_API_URL ??
-  "https://execufunction.com";
+  "https://siftable.io";
 console.log(`  API URL:    ${apiUrl}`);
 console.log(`  Token:      ${token.slice(0, 12)}…`);
 console.log(
