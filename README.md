@@ -99,7 +99,7 @@ Read more: [Architecture](docs/ARCHITECTURE.md)
 | `defineAgent()` | adaptive multi-step tool use | an LLM loop over a filtered registry |
 | `createConversationMemory()` / `createFactMemory()` | thread/fact state | persistence plus memory tools |
 | `createRAG()` | semantic document retrieval | pgvector + embeddings + tools |
-| `connectProvider()` | external system context | structured tools from ExecuFunction, Obsidian, etc. |
+| `connectProvider()` | external system context | structured tools from Siftable, Obsidian, etc. |
 | `createStore()` / `createPgStore()` | persistence | storage layer, not retrieval |
 
 Rule of thumb:
@@ -161,7 +161,7 @@ const agent = await createChatAgent({
   provider: "gemini",
   preset: "study-buddy",
   memory: true,                    // conversation + fact memory (on by default)
-  providers: ["execufunction"],    // connect external context
+  providers: ["siftable"],        // connect external context
 });
 
 // Use it four ways:
@@ -222,23 +222,23 @@ Context providers bring external systems (task managers, calendars, CRM, knowled
 
 ```typescript
 import { connectProvider, contextPrompt } from "./framework/index.js";
-import { createExecuFunctionProvider } from "./providers/execufunction/index.js";
+import { createSiftableProvider } from "./providers/execufunction/index.js";
 
-// Connect — registers 17 tools tagged "context" + "context:execufunction"
-const exf = await connectProvider(
-  createExecuFunctionProvider({ token: process.env.EXF_PAT }),
+// Connect — registers tools tagged "context" + "context:siftable"
+const sift = await connectProvider(
+  createSiftableProvider({ token: process.env.SIFT_PAT }),
   registry,
 );
 
 // Inject active tasks + upcoming events into agent system prompts
-const context = await contextPrompt([exf]);
+const context = await contextPrompt([sift]);
 ```
 
 The `ContextProvider` interface is pluggable — implement `metadata`, `connect()`, and `createTools()` to bring any backend into the framework. See [Architecture](docs/ARCHITECTURE.md#context-providers) for the full interface.
 
 | Provider | Status | Capabilities |
 |----------|--------|--------------|
-| [ExecuFunction](src/providers/execufunction/) | Built-in | tasks, projects, calendar, knowledge, people, organizations, codebase |
+| [Siftable](src/providers/execufunction/) | Built-in | tasks, projects, calendar, knowledge, people, organizations, codebase |
 | Obsidian | Template (planned) | knowledge |
 | Notion | Template (planned) | knowledge, tasks, projects |
 
@@ -318,10 +318,10 @@ The registry validates parameters before handlers run, so schema errors are surf
 
 ### Siftable context provider
 
-`src/providers/execufunction/` exposes [Siftable](https://execufunction.com)
+`src/providers/execufunction/` exposes [Siftable](https://siftable.io)
 (formerly ExecuFunction) as an openFunctions [`ContextProvider`](src/framework/context.ts).
 The provider wraps the published [`@siftable/mcp-server`](https://www.npmjs.com/package/@siftable/mcp-server)
-SDK; 31 tools across 10 domains are exposed today (tasks, calendar,
+SDK; tools across 10 domains are exposed today (tasks, calendar,
 knowledge, projects, people, organizations, codebase, work items, vault,
 datasets, code memories). The full SDK surface (~111 methods) is reachable
 via `client.raw()` for any tool not yet wrapped.
