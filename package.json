@@ -2,6 +2,18 @@
   "name": "openfunction",
   "version": "1.0.0",
   "description": "Build AI agent tools in minutes. Workshop kit for creating MCP servers that work with any AI.",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Tom-R-Main/openFunctions.git"
+  },
+  "homepage": "https://github.com/Tom-R-Main/openFunctions#readme",
+  "bugs": {
+    "url": "https://github.com/Tom-R-Main/openFunctions/issues"
+  },
+  "engines": {
+    "node": ">=22"
+  },
   "type": "module",
   "main": "src/index.ts",
   "bin": {
@@ -13,16 +25,16 @@
     "test-tools": "tsx test-client/cli.ts",
     "chat": "tsx scripts/chat.ts",
     "gemini": "tsx scripts/chat.ts gemini",
-    "test": "tsx test-client/run-tests.ts && tsx test-client/run-framework-tests.ts && tsx test-client/run-parallel-tools-tests.ts",
+    "test": "tsx test-client/run-tests.ts && tsx test-client/run-framework-tests.ts && tsx test-client/run-parallel-tools-tests.ts && tsx test-client/run-siftable-provider-tests.ts",
     "test:framework": "tsx test-client/run-framework-tests.ts && tsx test-client/run-parallel-tools-tests.ts",
     "create-tool": "tsx scripts/create-tool.ts",
     "docs": "tsx scripts/generate-docs.ts",
     "inspect": "npx @modelcontextprotocol/inspector tsx src/index.ts"
   },
   "dependencies": {
-    "@modelcontextprotocol/sdk": "^1.12.1",
-    "@siftable/mcp-server": "^1.2.9",
-    "pg": "^8.20.0"
+    "@modelcontextprotocol/sdk": "^1.30.0",
+    "@siftable/mcp-server": "^1.2.17",
+    "pg": "^8.22.0"
   },
   "devDependencies": {
     "@types/node": "^22.0.0",

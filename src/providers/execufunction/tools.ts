@@ -452,6 +452,21 @@ export function createCodebaseTools(client: ExfClient): ToolDefinition<any, any>
 export function createWorkItemTools(client: ExfClient): ToolDefinition<any, any>[] {
   const sift = client.raw();
 
+  const redactWorkItemTokens = <T>(data: T): T => {
+    if (!data || typeof data !== "object" || Array.isArray(data)) return data;
+    const record = data as Record<string, unknown>;
+    const redact = (value: unknown): unknown => {
+      if (!value || typeof value !== "object" || Array.isArray(value)) return value;
+      const { claimToken: _claimToken, ...safe } = value as Record<string, unknown>;
+      return safe;
+    };
+    if (record.workItem) return { ...record, workItem: redact(record.workItem) } as T;
+    if (Array.isArray(record.workItems)) {
+      return { ...record, workItems: record.workItems.map(redact) } as T;
+    }
+    return data;
+  };
+
   return [
     defineTool<{
       status?: string;
@@ -485,7 +500,7 @@ export function createWorkItemTools(client: ExfClient): ToolDefinition<any, any>
         if (res.error || !res.data) {
           return err(`listWorkItems failed (${res.statusCode}): ${res.error}`);
         }
-        return ok(res.data, `Found ${res.data.workItems.length} work item(s)`);
+        return ok(redactWorkItemTokens(res.data), `Found ${res.data.workItems.length} work item(s)`);
       },
     }),
 
@@ -507,16 +522,20 @@ export function createWorkItemTools(client: ExfClient): ToolDefinition<any, any>
         if (res.error || !res.data) {
           return err(`getWorkItem failed (${res.statusCode}): ${res.error}`);
         }
-        return ok(res.data);
+        return ok(redactWorkItemTokens(res.data));
       },
     }),
 
-    defineTool<{ alias: string; preferredTaskId?: string }>({
+    defineTool<{
+      alias?: string;
+      claimOwner: string;
+      workItemId?: string;
+      leaseSeconds?: number;
+    }>({
       name: "exf_work_item_claim",
       description:
-        "Claim the next available work item for an agent alias. Optionally " +
-        "prefer a specific task. Returns the claimed work item, or empty if " +
-        "none are available.",
+        "Atomically claim the next dependency-ready work item. Optionally target " +
+        "a specific work item. Returns a claim token required by lease-owned transitions.",
       inputSchema: {
         type: "object",
         properties: {
@@ -524,52 +543,118 @@ export function createWorkItemTools(client: ExfClient): ToolDefinition<any, any>
             type: "string",
             description: "Agent alias claiming the work (e.g. 'claude-code')",
           },
-          preferredTaskId: {
+          claimOwner: {
             type: "string",
-            description: "Optional preferred task ID to look for first",
+            description: "Unique owner identity for this worker/session",
           },
+          workItemId: { type: "string", description: "Optional specific work-item UUID" },
+          leaseSeconds: { type: "integer", description: "Claim lease duration in seconds" },
         },
-        required: ["alias"],
+        required: ["claimOwner"],
       },
       tags: ["work_items"],
-      handler: async ({ alias, preferredTaskId }) => {
-        const input: Record<string, unknown> = { alias };
-        if (preferredTaskId) input.preferredTaskId = preferredTaskId;
+      handler: async ({ alias, claimOwner, workItemId, leaseSeconds }) => {
+        const input = {
+          claimOwner,
+          ...(alias ? { assignedAlias: alias } : {}),
+          ...(workItemId ? { workItemId } : {}),
+          ...(leaseSeconds ? { leaseSeconds } : {}),
+        };
         const res = await sift.claimWorkItem(input);
         if (res.error || !res.data) {
           return err(`claimWorkItem failed (${res.statusCode}): ${res.error}`);
         }
-        return ok(res.data, `Claimed work item for ${alias}`);
+        return ok(res.data, `Claimed work item for ${alias ?? claimOwner}`);
       },
     }),
 
-    defineTool<{ workItemId: string; action: string; notes?: string }>({
+    defineTool<{
+      workItemId: string;
+      action:
+        | "start"
+        | "heartbeat"
+        | "release"
+        | "review"
+        | "complete"
+        | "block"
+        | "fail"
+        | "cancel"
+        | "requeue";
+      claimOwner?: string;
+      claimToken?: string;
+      leaseSeconds?: number;
+      resultSummary?: string;
+      reason?: string;
+    }>({
       name: "exf_work_item_transition",
       description:
-        "Transition a work item to a new state. Common actions: 'start', " +
-        "'complete', 'block', 'fail'. Pass optional notes to record progress " +
-        "or the reason for blocking/failing.",
+        "Transition a work item. start/heartbeat/block/review/fail and release require " +
+        "claimOwner plus claimToken. Active cancel requires both credentials; queued/blocked " +
+        "cancel and blocked-work requeue omit both. Human completion from needs_review may omit them.",
       inputSchema: {
         type: "object",
         properties: {
           workItemId: { type: "string", description: "Work item ID" },
           action: {
             type: "string",
-            description: "State transition action: start, complete, block, fail",
+            enum: [
+              "start",
+              "heartbeat",
+              "release",
+              "review",
+              "complete",
+              "block",
+              "fail",
+              "cancel",
+              "requeue",
+            ],
+            description: "Lifecycle transition action",
           },
-          notes: { type: "string", description: "Optional notes about the transition" },
+          claimOwner: { type: "string", description: "Owner identity used for the claim" },
+          claimToken: { type: "string", description: "Opaque token returned by claim" },
+          leaseSeconds: { type: "integer", description: "Heartbeat/start lease duration" },
+          resultSummary: { type: "string", description: "Review/completion summary" },
+          reason: { type: "string", description: "Block or failure reason" },
         },
         required: ["workItemId", "action"],
       },
       tags: ["work_items"],
-      handler: async ({ workItemId, action, notes }) => {
+      handler: async ({
+        workItemId,
+        action,
+        claimOwner,
+        claimToken,
+        leaseSeconds,
+        resultSummary,
+        reason,
+      }) => {
+        const ownerBound = new Set(["start", "heartbeat", "block", "review", "fail"]);
+        if (ownerBound.has(action) && (!claimOwner || !claimToken)) {
+          return err(`${action} requires claimOwner and claimToken from the active claim`);
+        }
+        if (action === "release" && (!claimOwner || !claimToken)) {
+          return err("release requires claimOwner and claimToken from the active claim");
+        }
+        if (action === "cancel" && Boolean(claimOwner) !== Boolean(claimToken)) {
+          return err(
+            "cancel requires claimOwner and claimToken together for active work; " +
+              "omit both only for queued/blocked cancellation",
+          );
+        }
         const input: Record<string, unknown> = {};
-        if (notes) input.notes = notes;
+        if (claimOwner) input.claimOwner = claimOwner;
+        if (claimToken) input.claimToken = claimToken;
+        if (leaseSeconds) input.leaseSeconds = leaseSeconds;
+        if (resultSummary) input.resultSummary = resultSummary;
+        if (reason) {
+          input.blockedReason = reason;
+          input.failureReason = reason;
+        }
         const res = await sift.transitionWorkItem(workItemId, action, input);
         if (res.error || !res.data) {
           return err(`transitionWorkItem failed (${res.statusCode}): ${res.error}`);
         }
-        return ok(res.data, `Work item transitioned: ${action}`);
+        return ok(redactWorkItemTokens(res.data), `Work item transitioned: ${action}`);
       },
     }),
   ];
@@ -589,8 +674,7 @@ export function createVaultTools(client: ExfClient): ToolDefinition<any, any>[] 
       name: "exf_vault_list",
       description:
         "List Siftable vault entries (metadata only — does not return secret " +
-        "payloads). Filter by entry type, category, or search string. Use " +
-        "exf_vault_read_secret to fetch the actual secret payload.",
+        "payloads). Filter by entry type, category, or search string.",
       inputSchema: {
         type: "object",
         properties: {
@@ -614,7 +698,7 @@ export function createVaultTools(client: ExfClient): ToolDefinition<any, any>[] 
       name: "exf_vault_search",
       description:
         "Search vault entries by query string (metadata only — does not return " +
-        "secret payloads). Use exf_vault_read_secret to fetch the actual secret.",
+        "secret payloads).",
       inputSchema: {
         type: "object",
         properties: {
@@ -630,30 +714,6 @@ export function createVaultTools(client: ExfClient): ToolDefinition<any, any>[] 
           return err(`searchVaultEntries failed (${res.statusCode}): ${res.error}`);
         }
         return ok(res.data, `Found ${res.data.entries.length} match(es)`);
-      },
-    }),
-
-    defineTool<{ entryId: string }>({
-      name: "exf_vault_read_secret",
-      description:
-        "Read the decrypted secret payload of a vault entry. " +
-        "WARNING: this call is audit-logged on the Siftable side. Only " +
-        "invoke when the user explicitly asks for a secret value, and " +
-        "never echo the payload back into a model-visible context.",
-      inputSchema: {
-        type: "object",
-        properties: {
-          entryId: { type: "string", description: "Vault entry ID" },
-        },
-        required: ["entryId"],
-      },
-      tags: ["vault", "audit_logged"],
-      handler: async ({ entryId }) => {
-        const res = await sift.readVaultSecret(entryId);
-        if (res.error || !res.data) {
-          return err(`readVaultSecret failed (${res.statusCode}): ${res.error}`);
-        }
-        return ok(res.data, "Secret read (audit-logged)");
       },
     }),
 
