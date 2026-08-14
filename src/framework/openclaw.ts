@@ -6,14 +6,14 @@
  * once and expose the same tool to MCP clients, ChatAgent, AND openclaw —
  * without hand-writing a plugin per tool.
  *
- * No runtime dependency on @openclaw/plugin-sdk — the bridge defines the
+ * No runtime dependency on `openclaw` — the bridge defines the
  * compatible shape locally, so this module ships with the framework
  * regardless of whether openclaw is installed. Plugin authors add the
- * openclaw SDK in their plugin's package.json, then call:
+ * OpenClaw package as a peer in their plugin's package.json, then call:
  *
  * ```ts
  * import { definePluginEntry } from "openclaw/plugin-sdk/plugin-entry";
- * import { toOpenclawTools } from "@openfunctions/framework/openclaw";
+ * import { toOpenclawTools } from "openfunction/framework";
  * import { registry } from "./register-tools.js";
  *
  * export default definePluginEntry({
@@ -31,6 +31,12 @@
 
 import type { ToolRegistry } from "./registry.js";
 import type { ToolDefinition, ToolResult } from "./types.js";
+import {
+  executeRuntimeTool,
+  formatRuntimeToolResult,
+  selectRuntimeTools,
+  type RuntimeToolSelectionOptions,
+} from "./runtime-tool-bridge.js";
 
 // ─── Output shape — compatible with openclaw's AnyAgentTool ────────────────
 
@@ -50,7 +56,7 @@ export interface OpenclawToolResult {
  * Tool shape openclaw plugins pass to `api.registerTool()`.
  *
  * Defined locally so this module has no runtime dep on
- * @openclaw/plugin-sdk. The shape matches openclaw's `AnyAgentTool`
+ * OpenClaw. The shape matches openclaw's `AnyAgentTool`
  * sufficiently for `api.registerTool()` to accept it; if openclaw's
  * type ever drifts beyond this, plugin authors can add an `as never`
  * cast at the registration site.
@@ -82,7 +88,7 @@ export interface OpenclawToolShape {
 
 // ─── Conversion options ────────────────────────────────────────────────────
 
-export interface ToOpenclawToolsOptions {
+export interface ToOpenclawToolsOptions extends RuntimeToolSelectionOptions {
   /**
    * Format an openFunctions ToolResult into an openclaw result block.
    * Default: success → JSON-stringified data (or message if data is empty),
@@ -91,21 +97,37 @@ export interface ToOpenclawToolsOptions {
    * summaries, etc.) or to match a specific openclaw display contract.
    */
   formatResult?: (result: ToolResult, tool: ToolDefinition) => OpenclawToolResult;
-  /**
-   * Skip tools that fail this predicate. Default: include all.
-   * Useful when one registry holds tools meant for other runtimes too.
-   */
-  filter?: (tool: ToolDefinition) => boolean;
-  /**
-   * Prefix every tool name with this string (e.g. "siftable_") so a
-   * single openclaw plugin can safely bundle tools from multiple sources
-   * without name collisions.
-   */
-  namePrefix?: string;
-  /**
-   * Compute the human-readable label per tool. Default: the tool name.
-   */
-  label?: (tool: ToolDefinition) => string;
+}
+
+/** Runtime context passed by OpenClaw's current `defineToolPlugin` helper. */
+export interface OpenclawToolPluginExecutionContext {
+  signal?: AbortSignal;
+  toolCallId: string;
+}
+
+/**
+ * Dependency-free shape accepted by `defineToolPlugin({ tools: (tool) => ... })`.
+ * Plugin code passes each definition through OpenClaw's `tool()` factory.
+ */
+export interface OpenclawToolPluginToolShape {
+  name: string;
+  label: string;
+  description: string;
+  parameters: unknown;
+  optional?: boolean;
+  execute: (
+    params: unknown,
+    config: unknown,
+    context: OpenclawToolPluginExecutionContext,
+  ) => Promise<unknown>;
+}
+
+export interface ToOpenclawToolPluginToolsOptions
+  extends RuntimeToolSelectionOptions {
+  /** Mark selected tools optional in generated OpenClaw metadata. */
+  optional?: (tool: ToolDefinition) => boolean;
+  /** Customize a successful plain/JSON-compatible return value. */
+  formatResult?: (result: ToolResult, tool: ToolDefinition) => unknown;
 }
 
 // ─── Conversion ────────────────────────────────────────────────────────────
@@ -120,9 +142,9 @@ export function toOpenclawTools(
   registry: ToolRegistry,
   options: ToOpenclawToolsOptions = {},
 ): OpenclawToolShape[] {
-  const filter = options.filter ?? (() => true);
-  const tools = registry.getAll().filter(filter);
-  return tools.map((tool) => toolToOpenclaw(tool, registry, options));
+  return selectRuntimeTools(registry, options).map(({ tool }) =>
+    toolToOpenclaw(tool, registry, options),
+  );
 }
 
 /**
@@ -146,14 +168,9 @@ export function toolToOpenclaw(
     description: tool.description,
     parameters: tool.inputSchema,
     async execute(_toolCallId, params, _signal) {
-      // NOTE: AbortSignal is accepted to satisfy openclaw's contract but
-      // not currently propagated — registry.execute doesn't take one
-      // today. A future framework change can thread signal through.
-      const paramsRecord =
-        params && typeof params === "object" && !Array.isArray(params)
-          ? (params as Record<string, unknown>)
-          : {};
-      const result = await registry.execute(tool.name, paramsRecord);
+      // The bridge checks cancellation before and after execution. The
+      // framework handler contract itself does not yet accept a signal.
+      const result = await executeRuntimeTool(registry, tool, params, _signal);
       return formatResult(result, tool);
     },
   };
@@ -183,21 +200,52 @@ function defaultFormatResult(
     };
   }
 
-  const text = formatSuccess(result);
+  const text = formatRuntimeToolResult(result);
   return {
     type: "text",
     content: [{ type: "text", text }],
   };
 }
 
-function formatSuccess(result: ToolResult): string {
-  const data = result.data;
-  if (data === undefined || data === null) {
-    return result.message ?? "(no data)";
+/**
+ * Convert registry tools for OpenClaw's current `defineToolPlugin` API.
+ *
+ * Unlike the legacy `api.registerTool()` adapter above, failures throw so the
+ * host records an actual failed tool call. Successful values remain structured
+ * when possible, which lets OpenClaw retain them in result details.
+ */
+export function toOpenclawToolPluginTools(
+  registry: ToolRegistry,
+  options: ToOpenclawToolPluginToolsOptions = {},
+): OpenclawToolPluginToolShape[] {
+  return selectRuntimeTools(registry, options).map(
+    ({ tool, exposedName, label }) => ({
+      name: exposedName,
+      label,
+      description: tool.description,
+      parameters: tool.inputSchema,
+      ...(options.optional?.(tool) ? { optional: true } : {}),
+      async execute(params, _config, context) {
+        const result = await executeRuntimeTool(
+          registry,
+          tool,
+          params,
+          context.signal,
+        );
+        if (!result.success) {
+          throw new Error(result.error ?? "unknown error");
+        }
+        return options.formatResult
+          ? options.formatResult(result, tool)
+          : defaultToolPluginResult(result);
+      },
+    }),
+  );
+}
+
+function defaultToolPluginResult(result: ToolResult): unknown {
+  if (result.message !== undefined && result.data !== undefined) {
+    return { message: result.message, data: result.data };
   }
-  if (typeof data === "string") {
-    return result.message ? `${result.message}\n${data}` : data;
-  }
-  const json = JSON.stringify(data, null, 2);
-  return result.message ? `${result.message}\n${json}` : json;
+  return result.data ?? result.message ?? null;
 }

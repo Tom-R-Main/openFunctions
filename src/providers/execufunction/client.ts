@@ -2,7 +2,7 @@
  * Siftable Provider Client
  *
  * Thin adapter over the published @siftable/mcp-server SDK. Keeps the
- * ExfClient call surface stable for tools.ts (throws on error, returns
+ * ExfClient call surface stable for legacy tools.ts (throws on error, returns
  * the unwrapped data shape the tools expect) so adding new domains
  * doesn't require touching every tool handler.
  *
@@ -14,8 +14,8 @@
  *
  * Auth resolution order (in createSiftableProvider):
  *   1. Explicit { token, apiUrl } passed to the factory
- *   2. SIFT_PAT / SIFT_API_URL (current branding)
- *   3. EXF_PAT / EXF_API_URL (legacy fallback — still supported)
+ *   2. SIFT_TOKEN / SIFT_PAT / SIFT_API_URL (current conventions)
+ *   3. EXF_TOKEN / EXF_PAT / EXF_API_URL (legacy fallback)
  */
 
 import { SiftClient } from "@siftable/mcp-server/exfClient";
@@ -274,9 +274,8 @@ export class ExfClient {
   }
 
   /**
-   * Escape hatch: get the underlying SiftClient for callers who want
-   * to use methods we haven't wrapped yet (work items, vault, datasets,
-   * code memories, etc.). Returns a fully-typed SDK instance.
+   * Get the underlying client used by the canonical SDK-derived tools and
+   * by callers that need direct typed SDK access.
    */
   raw(): SiftClient {
     return this.sift;

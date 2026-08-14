@@ -3,17 +3,13 @@
  *
  * In a real plugin you'd import an existing ToolRegistry from your
  * application code (or from the openFunctions framework once it's
- * published as @openfunctions/framework). Here we build a small
+ * published as an `openfunction` framework export). Here we build a small
  * registry inline so the demo doesn't need any framework imports
  * beyond the bridge function it's showcasing.
  */
 
-import {
-  ToolRegistry,
-  defineTool,
-  ok,
-  err,
-} from "../../../src/framework/index.js";
+import { ToolRegistry } from "../../../src/framework/registry.js";
+import { defineTool, err, ok } from "../../../src/framework/tool.js";
 
 export function buildSampleRegistry(): ToolRegistry {
   const registry = new ToolRegistry();

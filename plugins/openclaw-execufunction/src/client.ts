@@ -4,7 +4,7 @@
  * Thin adapter over the published @siftable/mcp-server SDK. Keeps the
  * ExfClient call surface stable so the plugin's tool handlers don't
  * need to change. Resolves auth from openclaw plugin config first,
- * then SIFT_PAT, then legacy EXF_PAT.
+ * then the current CLI/MCP token variables, then legacy variables.
  */
 
 import { SiftClient } from "@siftable/mcp-server/exfClient";
@@ -33,9 +33,11 @@ function resolveToken(cfg?: OpenClawConfig): string | undefined {
   if (configToken && typeof configToken === "object" && "path" in configToken) {
     return normalizeSecretInput(configToken) || undefined;
   }
-  // SIFT_PAT is the current brand; EXF_PAT is the legacy fallback.
+  // SIFT_TOKEN is the CLI convention; SIFT_PAT remains the MCP convention.
   return (
+    normalizeSecretInput(process.env.SIFT_TOKEN) ||
     normalizeSecretInput(process.env.SIFT_PAT) ||
+    normalizeSecretInput(process.env.EXF_TOKEN) ||
     normalizeSecretInput(process.env.EXF_PAT) ||
     undefined
   );
@@ -82,7 +84,7 @@ export class ExfClient {
     if (!token) {
       throw new Error(
         "Siftable requires a Personal Access Token. " +
-          "Set SIFT_PAT (or legacy EXF_PAT) in your environment, " +
+          "Set SIFT_TOKEN or SIFT_PAT (legacy EXF_TOKEN/EXF_PAT also work), " +
           "or configure plugins.entries.execufunction.config.token.",
       );
     }

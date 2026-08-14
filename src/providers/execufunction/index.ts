@@ -3,13 +3,14 @@
  *
  * Reference implementation of the ContextProvider interface, built on
  * the published @siftable/mcp-server SDK. Connects Siftable's cloud
- * API (tasks, calendar, knowledge, projects, CRM, codebase) to the
- * openFunctions agent runtime.
+ * API to the openFunctions agent runtime. The default tool surface is
+ * projected from the installed MCP SDK so schemas, feature gates, and
+ * execution semantics stay aligned with Siftable.
  *
  * Auth resolution order:
  *   1. Explicit { token, apiUrl, workspaceId } passed to the factory
- *   2. SIFT_PAT / SIFT_API_URL / SIFT_WORKSPACE_ID (current branding)
- *   3. EXF_PAT / EXF_API_URL / EXF_WORKSPACE_ID (legacy fallback)
+ *   2. SIFT_TOKEN / SIFT_PAT / SIFT_API_URL / SIFT_WORKSPACE_ID
+ *   3. EXF_TOKEN / EXF_PAT / EXF_API_URL / EXF_WORKSPACE_ID (legacy)
  *
  * @example
  * ```ts
@@ -30,6 +31,7 @@
 import type { ContextProvider, ConnectedProvider, ContextProviderMetadata } from "../../framework/context.js";
 import type { ToolDefinition } from "../../framework/types.js";
 import { ExfClient } from "./client.js";
+import { createSiftableSdkTools } from "./sdk-tools.js";
 import {
   createTaskTools,
   createCalendarTools,
@@ -52,6 +54,10 @@ export interface SiftableProviderOptions {
   token?: string;
   /** Workspace ID for multi-workspace accounts */
   workspaceId?: string;
+  /** Also expose the pre-1.2 hand-written exf_* compatibility aliases. */
+  includeLegacyAliases?: boolean;
+  /** Include MCP capabilities disabled by current feature gates. */
+  includeDisabledCapabilities?: boolean;
 }
 
 /** @deprecated Use SiftableProviderOptions. Kept for back-compat. */
@@ -63,8 +69,9 @@ const METADATA: ContextProviderMetadata = {
   id: "siftable",
   name: "Siftable",
   description:
-    "Sift tasks, projects, calendar, knowledge, CRM, and codebase - " +
-    "structured cloud context for AI agents",
+    "Siftable is a shared, evidence-backed work graph: human planning and " +
+    "executable agent work stay distinct while projects, knowledge, relationships, " +
+    "datasets, governed actions, and verification remain connected.",
   capabilities: [
     "tasks",
     "projects",
@@ -73,13 +80,24 @@ const METADATA: ContextProviderMetadata = {
     "people",
     "organizations",
     "codebase",
+    "code_memory",
+    "vault",
+    "datasets",
+    "agent_work",
+    "agents",
+    "relationships",
+    "approvals",
+    "execution_grants",
+    "ai",
+    "capabilities",
   ],
   auth: {
     kind: "pat",
-    envVar: "SIFT_PAT",
+    envVar: "SIFT_TOKEN",
     setupUrl: "https://siftable.io/settings/tokens",
     instructions:
-      "Run 'sift auth login' (or set SIFT_PAT). Legacy EXF_PAT also works.",
+      "Embedded adapters use an explicit token, SIFT_TOKEN, or SIFT_PAT. " +
+      "The CLI can separately save a login with 'sift auth login'. Legacy EXF_TOKEN and EXF_PAT also work.",
   },
 };
 
@@ -100,13 +118,18 @@ export function createSiftableProvider(
     metadata: METADATA,
 
     async connect(): Promise<ConnectedProvider> {
-      // Resolve auth in order: explicit option → SIFT_* env → EXF_* env.
+      // Resolve both current CLI (SIFT_TOKEN) and MCP (SIFT_PAT) conventions.
       const token =
-        options?.token ?? process.env.SIFT_PAT ?? process.env.EXF_PAT;
+        options?.token ??
+        process.env.SIFT_TOKEN ??
+        process.env.SIFT_PAT ??
+        process.env.EXF_TOKEN ??
+        process.env.EXF_PAT;
       if (!token) {
         throw new Error(
           "Siftable requires a Personal Access Token.\n" +
-            "Set SIFT_PAT (or legacy EXF_PAT) in your environment, or pass { token: '...' }.\n" +
+            "Set SIFT_TOKEN or SIFT_PAT in your environment, or pass { token: '...' }.\n" +
+            "Legacy EXF_TOKEN and EXF_PAT also work. A saved 'sift auth login' is CLI-only.\n" +
             "Generate a token at https://siftable.io/settings/tokens",
         );
       }
@@ -125,18 +148,22 @@ export function createSiftableProvider(
         metadata: METADATA,
 
         createTools(): ToolDefinition<any, any>[] {
-          return [
-            ...createTaskTools(client),
-            ...createCalendarTools(client),
-            ...createKnowledgeTools(client),
-            ...createProjectTools(client),
-            ...createPeopleTools(client),
-            ...createCodebaseTools(client),
-            ...createWorkItemTools(client),
-            ...createVaultTools(client),
-            ...createDatasetTools(client),
-            ...createCodeMemoryTools(client),
-          ];
+          const canonical = createSiftableSdkTools(client, {
+            includeDisabled: options?.includeDisabledCapabilities,
+          });
+          if (!options?.includeLegacyAliases) return canonical;
+          return canonical.concat(
+            createTaskTools(client),
+            createCalendarTools(client),
+            createKnowledgeTools(client),
+            createProjectTools(client),
+            createPeopleTools(client),
+            createCodebaseTools(client),
+            createWorkItemTools(client),
+            createVaultTools(client),
+            createDatasetTools(client),
+            createCodeMemoryTools(client),
+          );
         },
 
         async buildContext(): Promise<string | undefined> {
@@ -144,7 +171,9 @@ export function createSiftableProvider(
             "### Assistant Grounding\n" +
               "- You are connected to Siftable as the Siftable assistant.\n" +
               "- Sift tasks are human planning tasks managed by `sift tasks`; use task tools for to-dos, planning, priorities, due dates, and project-linked action items.\n" +
-              "- Work items are the separate executable agent queue managed by `sift work`; use work-item tools only when the user is asking about agent-executable queue work.",
+              "- Work items are the separate executable agent queue managed by `sift work`; use work-item tools only when the user is asking about agent-executable queue work.\n" +
+              "- Treat evidence, authority, idempotency, lifecycle transitions, and verification requirements as part of the action contract—not incidental metadata.\n" +
+              "- The ordinary `sift` CLI is the human/operator surface. Its separate interactive TUI is not an MCP transport.",
           ];
 
           // Fetch active Sift tasks
@@ -223,3 +252,6 @@ export function createSiftableProvider(
  *   brand. Kept so existing callers keep working without code churn.
  */
 export const createExecuFunctionProvider = createSiftableProvider;
+
+export { createSiftableSdkTools } from "./sdk-tools.js";
+export type { SiftableSdkToolOptions } from "./sdk-tools.js";

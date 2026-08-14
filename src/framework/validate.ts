@@ -29,7 +29,7 @@ export function validateParams(
 
   // Check required fields
   for (const field of required) {
-    if (params[field] === undefined || params[field] === null) {
+    if (params[field] === undefined) {
       const prop = schema.properties[field];
       const desc = prop?.description ? ` (${prop.description})` : "";
       errors.push({
@@ -41,10 +41,17 @@ export function validateParams(
 
   // Check types and constraints for provided fields
   for (const [key, value] of Object.entries(params)) {
-    if (value === undefined || value === null) continue;
+    if (value === undefined) continue;
 
     const prop = schema.properties[key];
-    if (!prop) continue; // Extra params are fine — just ignore
+    if (!prop) {
+      if (schema.additionalProperties === false) {
+        errors.push({ field: key, message: `Unexpected parameter "${key}"` });
+      } else if (schema.additionalProperties && typeof schema.additionalProperties === "object") {
+        errors.push(...validateField(key, value, schema.additionalProperties));
+      }
+      continue;
+    }
 
     const fieldErrors = validateField(key, value, prop);
     errors.push(...fieldErrors);
@@ -63,13 +70,44 @@ function validateField(
 ): ValidationError[] {
   const errors: ValidationError[] = [];
 
+  if (schema.anyOf && schema.anyOf.some((candidate) => validateField(name, value, candidate).length === 0)) {
+    return errors;
+  }
+  if (schema.anyOf) {
+    return [{ field: name, message: `"${name}" does not match any allowed schema` }];
+  }
+
+  if (schema.oneOf) {
+    const matches = schema.oneOf.filter((candidate) => validateField(name, value, candidate).length === 0);
+    if (matches.length === 1) return errors;
+    return [{ field: name, message: `"${name}" must match exactly one allowed schema` }];
+  }
+
+  if (schema.allOf) {
+    for (const candidate of schema.allOf) {
+      errors.push(...validateField(name, value, candidate));
+    }
+    if (errors.length > 0) return errors;
+  }
+
+  if ("const" in schema && !Object.is(value, schema.const)) {
+    errors.push({
+      field: name,
+      message: `"${name}" must equal ${JSON.stringify(schema.const)}`,
+    });
+    return errors;
+  }
+
   // Type check
   const actualType = getJsonSchemaType(value);
-  if (actualType !== schema.type) {
+  const allowedTypes = schema.type
+    ? (Array.isArray(schema.type) ? schema.type : [schema.type])
+    : [];
+  if (allowedTypes.length > 0 && !allowedTypes.includes(actualType as never)) {
     // Allow integer where number is expected
-    if (schema.type === "number" && actualType === "integer") {
+    if (allowedTypes.includes("number") && actualType === "integer") {
       // Fine — integers are valid numbers
-    } else if (schema.type === "integer" && actualType === "number") {
+    } else if (allowedTypes.includes("integer") && actualType === "number") {
       // Check if it's actually an integer
       if (!Number.isInteger(value)) {
         errors.push({
@@ -80,7 +118,7 @@ function validateField(
     } else {
       errors.push({
         field: name,
-        message: `"${name}" must be ${schema.type}, got ${actualType} (${JSON.stringify(value)})`,
+        message: `"${name}" must be ${allowedTypes.join(" or ")}, got ${actualType} (${JSON.stringify(value)})`,
       });
       return errors; // Skip further checks if type is wrong
     }
@@ -88,7 +126,7 @@ function validateField(
 
   // Enum check — JSON Schema enums can hold any primitive (number,
   // boolean, string), not just strings. Avoid coercing here.
-  if (schema.enum && !schema.enum.includes(value as string | number | boolean)) {
+  if (schema.enum && !schema.enum.some((candidate) => Object.is(candidate, value))) {
     errors.push({
       field: name,
       message: `"${name}" must be one of: ${schema.enum.join(", ")} — got "${value}"`,
@@ -96,7 +134,7 @@ function validateField(
   }
 
   // Array items check
-  if (schema.type === "array" && Array.isArray(value) && schema.items) {
+  if (allowedTypes.includes("array") && Array.isArray(value) && schema.items && !Array.isArray(schema.items)) {
     for (let i = 0; i < value.length; i++) {
       const itemErrors = validateField(`${name}[${i}]`, value[i], schema.items);
       errors.push(...itemErrors);
@@ -105,7 +143,7 @@ function validateField(
 
   // Nested object check
   if (
-    schema.type === "object" &&
+    allowedTypes.includes("object") &&
     typeof value === "object" &&
     value !== null &&
     schema.properties
@@ -114,7 +152,7 @@ function validateField(
     const obj = value as Record<string, unknown>;
 
     for (const field of nestedRequired) {
-      if (obj[field] === undefined || obj[field] === null) {
+      if (obj[field] === undefined) {
         errors.push({
           field: `${name}.${field}`,
           message: `Required field "${name}.${field}" is missing`,
@@ -123,13 +161,41 @@ function validateField(
     }
 
     for (const [key, val] of Object.entries(obj)) {
-      if (val === undefined || val === null) continue;
+      if (val === undefined) continue;
       const propSchema = schema.properties[key];
       if (propSchema) {
         const fieldErrors = validateField(`${name}.${key}`, val, propSchema);
         errors.push(...fieldErrors);
+      } else if (schema.additionalProperties === false) {
+        errors.push({ field: `${name}.${key}`, message: `Unexpected field "${name}.${key}"` });
+      } else if (schema.additionalProperties && typeof schema.additionalProperties === "object") {
+        errors.push(...validateField(`${name}.${key}`, val, schema.additionalProperties));
       }
     }
+  }
+
+  if (typeof value === "string") {
+    if (schema.minLength !== undefined && value.length < schema.minLength) {
+      errors.push({ field: name, message: `"${name}" must contain at least ${schema.minLength} characters` });
+    }
+    if (schema.maxLength !== undefined && value.length > schema.maxLength) {
+      errors.push({ field: name, message: `"${name}" must contain at most ${schema.maxLength} characters` });
+    }
+    if (schema.pattern !== undefined && !new RegExp(schema.pattern).test(value)) {
+      errors.push({ field: name, message: `"${name}" must match ${schema.pattern}` });
+    }
+  }
+
+  if (typeof value === "number") {
+    if (schema.minimum !== undefined && value < schema.minimum) errors.push({ field: name, message: `"${name}" must be at least ${schema.minimum}` });
+    if (schema.maximum !== undefined && value > schema.maximum) errors.push({ field: name, message: `"${name}" must be at most ${schema.maximum}` });
+    if (schema.exclusiveMinimum !== undefined && value <= schema.exclusiveMinimum) errors.push({ field: name, message: `"${name}" must be greater than ${schema.exclusiveMinimum}` });
+    if (schema.exclusiveMaximum !== undefined && value >= schema.exclusiveMaximum) errors.push({ field: name, message: `"${name}" must be less than ${schema.exclusiveMaximum}` });
+  }
+
+  if (Array.isArray(value)) {
+    if (schema.minItems !== undefined && value.length < schema.minItems) errors.push({ field: name, message: `"${name}" must contain at least ${schema.minItems} items` });
+    if (schema.maxItems !== undefined && value.length > schema.maxItems) errors.push({ field: name, message: `"${name}" must contain at most ${schema.maxItems} items` });
   }
 
   return errors;

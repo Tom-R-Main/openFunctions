@@ -7,24 +7,49 @@
 
 // ─── JSON Schema (subset used for tool parameters) ─────────────────────────
 
+export type JsonSchemaType =
+  | "string"
+  | "number"
+  | "integer"
+  | "boolean"
+  | "array"
+  | "object"
+  | "null";
+
 export interface JsonSchemaProperty {
-  type: "string" | "number" | "integer" | "boolean" | "array" | "object";
+  type?: JsonSchemaType | JsonSchemaType[];
   description?: string;
   /**
    * Allowed values. JSON Schema permits any primitive here, not just
    * strings — an integer field can legitimately constrain to enum: [1, 2, 3].
    */
-  enum?: (string | number | boolean)[];
-  items?: JsonSchemaProperty;
+  enum?: unknown[];
+  const?: unknown;
+  items?: JsonSchemaProperty | JsonSchemaProperty[];
   properties?: Record<string, JsonSchemaProperty>;
   required?: string[];
   default?: unknown;
+  additionalProperties?: boolean | JsonSchemaProperty;
+  anyOf?: JsonSchemaProperty[];
+  oneOf?: JsonSchemaProperty[];
+  allOf?: JsonSchemaProperty[];
+  minLength?: number;
+  maxLength?: number;
+  pattern?: string;
+  format?: string;
+  minimum?: number;
+  maximum?: number;
+  exclusiveMinimum?: number;
+  exclusiveMaximum?: number;
+  minItems?: number;
+  maxItems?: number;
 }
 
 export interface InputSchema {
   type: "object";
   properties: Record<string, JsonSchemaProperty>;
   required?: string[];
+  additionalProperties?: boolean | JsonSchemaProperty;
 }
 
 // ─── Capability Contract ──────────────────────────────────────────────────

@@ -56,9 +56,17 @@ export type ContextCapability =
   | "people"
   | "organizations"
   | "codebase"
+  | "code_memory"
   | "vault"
   | "datasets"
-  | "documents";
+  | "documents"
+  | "agent_work"
+  | "agents"
+  | "relationships"
+  | "approvals"
+  | "execution_grants"
+  | "ai"
+  | "capabilities";
 
 /**
  * Lightweight metadata about a context provider.

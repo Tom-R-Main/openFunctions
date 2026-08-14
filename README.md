@@ -226,7 +226,7 @@ import { createSiftableProvider } from "./providers/execufunction/index.js";
 
 // Connect — registers tools tagged "context" + "context:siftable"
 const sift = await connectProvider(
-  createSiftableProvider({ token: process.env.SIFT_PAT }),
+  createSiftableProvider({ token: process.env.SIFT_TOKEN }),
   registry,
 );
 
@@ -238,7 +238,7 @@ The `ContextProvider` interface is pluggable — implement `metadata`, `connect(
 
 | Provider | Status | Capabilities |
 |----------|--------|--------------|
-| [Siftable](src/providers/execufunction/) | Built-in | tasks, projects, calendar, knowledge, people, organizations, codebase |
+| [Siftable](src/providers/execufunction/) | Built-in | human planning, agent work, projects, knowledge, relationships, calendar, code, vault, governed AI and optional datasets |
 | Obsidian | Template (planned) | knowledge |
 | Notion | Template (planned) | knowledge, tasks, projects |
 
@@ -330,6 +330,8 @@ The registry validates parameters before handlers run, so schema errors are surf
 - [Architecture](docs/ARCHITECTURE.md): the runtime model, filtered registries, synthetic tools, and execution paths
 - [Legible runs](docs/RUNS.md): run manifests, outcome claims, verification, assurance, and fulfillment
 - [TypeScript 7 and 6](docs/TYPESCRIPT.md): native TS7 builds with the TS6 compatibility/programmatic API
+- [Agent runtimes](docs/AGENT-RUNTIMES.md): Hermes MCP, Pi extensions, and current OpenClaw tool plugins
+- [Siftable integration](docs/SIFTABLE.md): current MCP/CLI boundaries, auth, tool projection, and drift checks
 - [RAG](docs/RAG.md): semantic chunking, Gemini/OpenAI embeddings, pgvector schema, HNSW search, and tool integration
 
 ## Integrations
@@ -338,11 +340,15 @@ The registry validates parameters before handlers run, so schema errors are surf
 
 `src/providers/execufunction/` exposes [Siftable](https://siftable.io)
 (formerly ExecuFunction) as an openFunctions [`ContextProvider`](src/framework/context.ts).
-The provider wraps the published [`@siftable/mcp-server`](https://www.npmjs.com/package/@siftable/mcp-server)
-SDK; tools across 10 domains are exposed today (tasks, calendar,
-knowledge, projects, people, organizations, codebase, work items, vault,
-datasets, code memories). The full SDK surface (~111 methods) is reachable
-via `client.raw()` for any tool not yet wrapped.
+The provider projects its default tool set directly from the published
+[`@siftable/mcp-server`](https://www.npmjs.com/package/@siftable/mcp-server)
+SDK. That keeps tool names, schemas, feature gates, transport containment,
+work-item lifecycle rules, structured receipts, and execution behavior aligned
+with the installed Siftable MCP version. The current `1.2.27` package declares
+136 tools; 114 are callable with its default feature flags. Optional dataset
+and ontology tools appear automatically when their Siftable feature flags are
+enabled. Set `includeLegacyAliases: true` only when migrating callers that still
+invoke the old hand-written `exf_*` names.
 
 ```ts
 import { connectProvider, registry } from "openfunction/framework";
@@ -351,31 +357,55 @@ import { createSiftableProvider } from "openfunction/providers/execufunction";
 const sift = await connectProvider(createSiftableProvider(), registry);
 ```
 
-Auth resolution: explicit `{ token }` argument → `SIFT_PAT` env →
-`EXF_PAT` env (legacy fallback). Same fallback chain for `SIFT_API_URL`
-and `SIFT_WORKSPACE_ID`.
+Auth resolution: explicit `{ token }` argument → `SIFT_TOKEN` (current CLI
+convention) → `SIFT_PAT` (MCP convention) → legacy `EXF_TOKEN` / `EXF_PAT`.
+`sift auth login` saves credentials for the CLI; embedded OpenFunction and
+OpenClaw processes still need an explicit token or one of those environment
+variables. The API URL and workspace ID retain `SIFT_*` then legacy `EXF_*`
+fallbacks.
 
-Run `tsx scripts/test-siftable-live.ts` (with `SIFT_PAT` set) to
+The ordinary `sift` CLI is the human/operator surface. In the current CLI,
+`sift tasks` manages human planning, `sift work` manages the distinct executable
+agent queue, `sift capabilities --json` reports readiness, and
+`sift doctor --json` diagnoses auth/API/workspace configuration. The separate
+interactive TUI is not treated as an MCP transport or as command parity work.
+
+Run `tsx scripts/test-siftable-live.ts` (with `SIFT_TOKEN` or `SIFT_PAT` set) to
 verify the provider actually round-trips against your account.
 
-### openclaw bridge
+### Agent runtime bridges
+
+OpenFunction now has dependency-free adapters for three external agent hosts:
+
+- **Hermes Agent**: `createHermesMcpConfig()` produces a least-privilege MCP
+  configuration fragment with an explicit registry-tool allowlist.
+- **Pi (`@earendil-works/pi`)**: `registerPiTools()` and `toPiTools()` produce
+  native Pi extension tools with correct throw-on-failure behavior.
+- **OpenClaw**: `toOpenclawToolPluginTools()` targets the current
+  `defineToolPlugin()` generated-contract path. The existing
+  `toOpenclawTools()` adapter remains for mixed or dynamic plugins.
+
+See [Agent runtime integrations](docs/AGENT-RUNTIMES.md) for exact host setup
+and compatibility boundaries.
+
+### OpenClaw plugins
 
 `src/framework/openclaw.ts` exports `toOpenclawTools(registry)`, which
-converts an openFunctions `ToolRegistry` into the shape openclaw's
-`api.registerTool()` expects. No runtime dependency on
-`@openclaw/plugin-sdk` — the bridge defines a compatible shape locally,
-so the framework stays standalone.
+converts an openFunctions `ToolRegistry` into the compatibility shape
+OpenClaw's `api.registerTool()` expects. The newer
+`toOpenclawToolPluginTools()` adapter returns static definitions for
+`defineToolPlugin()` and generated `contracts.tools` metadata. Neither bridge
+adds an OpenClaw runtime dependency to the framework.
 
 Two reference plugins live in `plugins/`:
 
-- **`openclaw-execufunction/`** — Siftable for openclaw. Modernized to
-  wrap `@siftable/mcp-server` directly; resolves `SIFT_PAT` first, then
-  legacy `EXF_PAT`. Plugin id is `execufunction` for back-compat with
-  existing openclaw configs.
-- **`openclaw-openfunctions/`** — Reference plugin showing the
-  `toOpenclawTools` bridge with a small hand-built registry. Marked
-  `private:true`; uses a relative import to the colocated framework
-  (read its README for what to change before publishing).
+- **`openclaw-execufunction/`** — Siftable for OpenClaw. It derives all
+  currently enabled tools from `@siftable/mcp-server`, delegates execution to
+  the SDK, and generates its static `contracts.tools` manifest from the same
+  source. Plugin id `execufunction` remains for config compatibility.
+- **`openclaw-openfunctions/`** — Current tool-only reference using
+  `defineToolPlugin()`, compiled ESM, and generated manifest metadata. Marked
+  `private:true`; it imports the colocated framework by relative path.
 
 Install the Siftable plugin in openclaw:
 
@@ -383,8 +413,8 @@ Install the Siftable plugin in openclaw:
 openclaw plugins install @openfunctions/openclaw-execufunction
 ```
 
-Set `SIFT_PAT` (or legacy `EXF_PAT`) in the environment or via openclaw
-plugin settings.
+Set `SIFT_TOKEN` or `SIFT_PAT` (legacy `EXF_TOKEN` / `EXF_PAT` also work) in
+the environment, or use OpenClaw plugin settings.
 
 ## Project Structure
 
@@ -405,7 +435,8 @@ openFunctions/
 │   └── index.ts                # MCP entrypoint
 ├── plugins/
 │   ├── openclaw-execufunction/ # Siftable plugin for openclaw (publishable)
-│   └── openclaw-openfunctions/ # Reference: toOpenclawTools bridge demo (private)
+│   ├── openclaw-openfunctions/ # Reference: current tool-plugin bridge (private)
+│   └── pi-openfunctions/       # Reference: native Pi extension bridge (private)
 ├── docs/                       # Architecture docs
 ├── scripts/                    # chat, create-tool, docs
 ├── test-client/                # CLI tester + test runner

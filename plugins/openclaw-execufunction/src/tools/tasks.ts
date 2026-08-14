@@ -1,4 +1,4 @@
-import { Type } from "@sinclair/typebox";
+import { Type } from "typebox";
 import { jsonResult, readStringParam, readNumberParam } from "openclaw/plugin-sdk/provider-web-search";
 import type { ExfClient } from "../client.js";
 

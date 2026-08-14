@@ -1,7 +1,7 @@
 {
   "name": "@openfunctions/openclaw-openfunctions",
-  "version": "0.1.0",
-  "description": "Reference openclaw plugin demonstrating the openFunctions → openclaw bridge (toOpenclawTools)",
+  "version": "0.2.0",
+  "description": "Reference OpenClaw tool plugin demonstrating the current openFunctions generated-contract bridge",
   "type": "module",
   "license": "MIT",
   "private": true,
@@ -18,15 +18,38 @@
     "directory": "plugins/openclaw-openfunctions"
   },
   "files": [
-    "index.ts",
-    "src/",
+    "dist/",
     "openclaw.plugin.json",
     "README.md"
   ],
+  "scripts": {
+    "compile": "node scripts/clean.mjs && tsc --noEmit && esbuild src/index.ts --bundle --platform=node --format=esm --packages=external --outfile=dist/index.js",
+    "build": "npm run compile && openclaw plugins build --entry ./dist/index.js",
+    "build:check": "npm run compile && openclaw plugins build --entry ./dist/index.js --check",
+    "validate": "npm run compile && openclaw plugins validate --entry ./dist/index.js"
+  },
+  "dependencies": {
+    "typebox": "^1.3.7"
+  },
+  "peerDependencies": {
+    "openclaw": ">=2026.5.17"
+  },
   "devDependencies": {
-    "@openclaw/plugin-sdk": "*"
+    "openclaw": "2026.7.1-2",
+    "esbuild": "^0.28.2",
+    "@typescript/native": "npm:typescript@7.0.2"
   },
   "openclaw": {
-    "extensions": ["./index.ts"]
+    "extensions": [
+      "./dist/index.js"
+    ],
+    "compat": {
+      "pluginApi": ">=2026.5.17",
+      "minGatewayVersion": "2026.5.17"
+    },
+    "build": {
+      "openclawVersion": "2026.7.1-2",
+      "pluginSdkVersion": "2026.7.1-2"
+    }
   }
 }

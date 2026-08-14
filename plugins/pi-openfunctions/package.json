@@ -1,0 +1,33 @@
+{
+  "name": "@openfunctions/pi-openfunctions",
+  "version": "0.1.0",
+  "description": "Reference Pi extension exposing openFunctions registry tools",
+  "type": "module",
+  "license": "MIT",
+  "private": true,
+  "keywords": [
+    "pi",
+    "pi-extension",
+    "openfunctions",
+    "agent-tools"
+  ],
+  "files": [
+    "src/",
+    "README.md"
+  ],
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  },
+  "peerDependencies": {
+    "@earendil-works/pi-coding-agent": ">=0.84.1"
+  },
+  "devDependencies": {
+    "@earendil-works/pi-coding-agent": "0.84.1",
+    "@typescript/native": "npm:typescript@7.0.2"
+  },
+  "pi": {
+    "extensions": [
+      "./src/index.ts"
+    ]
+  }
+}

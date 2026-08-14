@@ -1,7 +1,27 @@
 {
   "id": "execufunction",
-  "providerAuthEnvVars": {
-    "execufunction": ["SIFT_PAT", "EXF_PAT"]
+  "name": "Siftable",
+  "description": "Siftable is a shared, evidence-backed work graph. Human planning and executable agent work stay distinct while projects, knowledge, relationships, datasets, governed actions, and verification remain connected.",
+  "version": "0.3.0",
+  "activation": {
+    "onStartup": true
+  },
+  "setup": {
+    "providers": [
+      {
+        "id": "execufunction",
+        "authMethods": [
+          "api-key"
+        ],
+        "envVars": [
+          "SIFT_TOKEN",
+          "SIFT_PAT",
+          "EXF_TOKEN",
+          "EXF_PAT"
+        ]
+      }
+    ],
+    "requiresRuntime": false
   },
   "uiHints": {
     "apiUrl": {
@@ -10,7 +30,7 @@
     },
     "token": {
       "label": "Personal Access Token",
-      "help": "Siftable PAT. Generate one at Settings > API Tokens. Fallback env vars: SIFT_PAT, then legacy EXF_PAT.",
+      "help": "Siftable PAT. Embedded adapters accept SIFT_TOKEN or SIFT_PAT; legacy EXF_TOKEN and EXF_PAT also work.",
       "sensitive": true,
       "placeholder": "sift_pat_... (legacy exf_pat_... still works)"
     },
@@ -21,23 +41,120 @@
   },
   "contracts": {
     "tools": [
-      "exf_tasks_list",
-      "exf_tasks_create",
-      "exf_tasks_update",
-      "exf_tasks_complete",
-      "exf_calendar_list",
-      "exf_calendar_create",
-      "exf_calendar_update",
-      "exf_notes_search",
-      "exf_notes_create",
-      "exf_notes_get",
-      "exf_projects_list",
-      "exf_projects_context",
-      "exf_people_search",
-      "exf_person_create",
-      "exf_org_search",
-      "exf_codebase_search",
-      "exf_code_who_knows"
+      "ai_models_list",
+      "ai_connection_status",
+      "ai_generate",
+      "ai_usage_get",
+      "approval_request",
+      "approval_status",
+      "capability_list",
+      "capability_describe",
+      "capability_execute",
+      "execution_grant_adapter_list",
+      "execution_grant_request",
+      "execution_grant_status",
+      "vault_materialization_request",
+      "vault_materialization_status",
+      "relationship_contact_plan_get",
+      "project_list",
+      "project_create",
+      "project_update",
+      "project_archive",
+      "project_get_context",
+      "project_planning_get",
+      "project_planning_recompute",
+      "task_list",
+      "task_create",
+      "task_get",
+      "task_update",
+      "task_planning_update",
+      "task_coupling_edge_list",
+      "task_coupling_edge_create",
+      "task_coupling_edge_delete",
+      "task_delete",
+      "task_bulk_delete",
+      "task_complete",
+      "agent_list",
+      "agent_get",
+      "agent_create",
+      "agent_update",
+      "agent_disable",
+      "agent_work_list",
+      "work_item_list",
+      "work_item_get",
+      "work_item_verification_plan_get",
+      "work_item_revision_history",
+      "work_item_verification_history",
+      "work_item_verification_evidence_submit",
+      "work_item_create",
+      "work_item_edit",
+      "work_item_dependencies_replace",
+      "work_item_claim",
+      "work_dependency_policy_get",
+      "work_dependency_policy_update",
+      "work_item_start",
+      "work_item_heartbeat",
+      "work_item_block",
+      "work_item_review",
+      "work_item_complete",
+      "work_item_fail",
+      "work_item_release",
+      "work_item_cancel",
+      "work_item_requeue",
+      "note_search",
+      "note_list",
+      "note_get",
+      "note_create",
+      "note_update",
+      "note_delete",
+      "note_bulk_delete",
+      "entity_graph",
+      "schema_introspect",
+      "people_search",
+      "person_create",
+      "person_update",
+      "person_delete",
+      "people_bulk_delete",
+      "organization_create",
+      "organization_search",
+      "organization_update",
+      "organization_delete",
+      "organization_bulk_delete",
+      "calendar_list_events",
+      "calendar_create_event",
+      "calendar_update_event",
+      "calendar_delete_event",
+      "codebase_list",
+      "codebase_register",
+      "codebase_status",
+      "codebase_snapshot_status",
+      "codebase_materialize_snapshot",
+      "codebase_index",
+      "codebase_index_incremental",
+      "codebase_delete",
+      "code_who_knows",
+      "code_compute_expertise",
+      "code_history",
+      "git_blame_symbol",
+      "task_link_code",
+      "code_memory_store",
+      "code_memory_search",
+      "code_memory_list",
+      "code_memory_get",
+      "code_memory_events",
+      "code_memory_confirm",
+      "code_memory_reject",
+      "code_memory_edit",
+      "code_memory_supersede",
+      "code_memory_mark_needs_review",
+      "code_memory_detect_stale",
+      "code_memory_delete",
+      "upload_document",
+      "vault_list",
+      "vault_create",
+      "vault_update",
+      "vault_search",
+      "vault_audit"
     ]
   },
   "configSchema": {
@@ -48,7 +165,10 @@
         "type": "string"
       },
       "token": {
-        "type": ["string", "object"]
+        "type": [
+          "string",
+          "object"
+        ]
       },
       "workspaceId": {
         "type": "string"

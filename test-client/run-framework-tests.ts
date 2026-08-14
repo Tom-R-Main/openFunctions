@@ -217,6 +217,32 @@ test("validate: ignores extra (non-schema) params", () => {
   assert.deepEqual(errs, []);
 });
 
+test("validate: enforces advanced schemas used by the Siftable MCP SDK", () => {
+  const schema: InputSchema = {
+    type: "object",
+    additionalProperties: false,
+    properties: {
+      destination: {
+        anyOf: [
+          { type: "null" },
+          { type: "string", minLength: 3, maxLength: 8 },
+        ],
+      },
+      count: { type: "integer", minimum: 1, maximum: 3 },
+      mode: { const: "safe" },
+    },
+    required: ["destination", "mode"],
+  };
+
+  assert.deepEqual(validateParams({ destination: null, count: 2, mode: "safe" }, schema), []);
+  const errors = validateParams({ destination: "x", count: 4, mode: "unsafe", extra: true }, schema);
+  assert.equal(errors.length, 4);
+  assert.ok(errors.some((error) => error.field === "destination"));
+  assert.ok(errors.some((error) => error.field === "count"));
+  assert.ok(errors.some((error) => error.field === "mode"));
+  assert.ok(errors.some((error) => error.field === "extra"));
+});
+
 test("validate: validates array item types", () => {
   const schema: InputSchema = {
     type: "object",
@@ -618,6 +644,9 @@ test("registry: unregister removes the tool and returns existed-flag", () => {
 // ─────────────────────────────────────────────────────────────────────────
 
 import { toOpenclawTools, toolToOpenclaw } from "../src/framework/openclaw.js";
+import { toOpenclawToolPluginTools } from "../src/framework/openclaw.js";
+import { registerPiTools, toPiTools } from "../src/framework/pi.js";
+import { createHermesMcpConfig } from "../src/framework/hermes.js";
 
 test("openclaw bridge: converts every registered tool by default", () => {
   const r = new ToolRegistry();
@@ -794,6 +823,187 @@ test("openclaw bridge: toolToOpenclaw works on a single tool", async () => {
   const oc = toolToOpenclaw(t, r);
   const result = await oc.execute("c1", {});
   assert.match(result.content[0].text, /alone/);
+});
+
+test("openclaw tool plugin bridge: returns structured values", async () => {
+  const r = new ToolRegistry();
+  r.register(
+    defineTool({
+      name: "lookup",
+      description: "look up a structured value",
+      inputSchema: {
+        type: "object",
+        properties: { id: { type: "string" } },
+        required: ["id"],
+      },
+      handler: async ({ id }) => ok({ id, found: true }, "lookup complete"),
+    }),
+  );
+
+  const [tool] = toOpenclawToolPluginTools(r);
+  const result = await tool.execute(
+    { id: "item-1" },
+    {},
+    { toolCallId: "call-1" },
+  );
+  assert.deepEqual(result, {
+    message: "lookup complete",
+    data: { id: "item-1", found: true },
+  });
+});
+
+test("openclaw tool plugin bridge: throws failed tool results", async () => {
+  const r = new ToolRegistry();
+  r.register(
+    defineTool({
+      name: "denied",
+      description: "always denies the request",
+      inputSchema: { type: "object", properties: {} },
+      handler: async () => err("not authorized"),
+    }),
+  );
+
+  const [tool] = toOpenclawToolPluginTools(r);
+  await assert.rejects(
+    tool.execute({}, {}, { toolCallId: "call-2" }),
+    /not authorized/,
+  );
+});
+
+test("pi bridge: registers selected tools with prompt metadata", () => {
+  const r = new ToolRegistry();
+  r.register(
+    defineTool({
+      name: "search_notes",
+      description: "search notes by query",
+      inputSchema: {
+        type: "object",
+        properties: { query: { type: "string" } },
+        required: ["query"],
+      },
+      tags: ["public"],
+      handler: async () => ok([]),
+    }),
+  );
+  r.register(
+    defineTool({
+      name: "internal_notes",
+      description: "inspect internal notes",
+      inputSchema: { type: "object", properties: {} },
+      tags: ["internal"],
+      handler: async () => ok([]),
+    }),
+  );
+
+  const registered: unknown[] = [];
+  const tools = registerPiTools(
+    { registerTool: (tool) => registered.push(tool) },
+    r,
+    {
+      filter: (tool) => tool.tags?.includes("public") ?? false,
+      namePrefix: "of_",
+      promptSnippet: () => "Search the connected notes store",
+      promptGuidelines: () => ["Use of_search_notes for note lookup."],
+    },
+  );
+
+  assert.equal(tools.length, 1);
+  assert.equal(registered.length, 1);
+  assert.equal(tools[0].name, "of_search_notes");
+  assert.equal(tools[0].promptSnippet, "Search the connected notes store");
+});
+
+test("pi bridge: executes successes and throws failures", async () => {
+  const r = new ToolRegistry();
+  r.register(
+    defineTool({
+      name: "pi_echo",
+      description: "echo text through Pi",
+      inputSchema: {
+        type: "object",
+        properties: { text: { type: "string" } },
+        required: ["text"],
+      },
+      handler: async ({ text }) => ok({ text }),
+    }),
+  );
+
+  const [tool] = toPiTools(r);
+  const result = await tool.execute("call-3", { text: "hello" }, undefined, undefined, {});
+  assert.match(result.content[0].text, /hello/);
+  assert.equal(result.details.success, true);
+  await assert.rejects(
+    tool.execute("call-4", {}, undefined, undefined, {}),
+    /text/i,
+  );
+});
+
+test("pi bridge: honors an already-aborted signal", async () => {
+  const r = new ToolRegistry();
+  r.register(
+    defineTool({
+      name: "slow_tool",
+      description: "a cancellable test tool",
+      inputSchema: { type: "object", properties: {} },
+      handler: async () => ok({ completed: true }),
+    }),
+  );
+  const [tool] = toPiTools(r);
+  await assert.rejects(
+    tool.execute("call-5", {}, AbortSignal.abort(), undefined, {}),
+    /abort/i,
+  );
+});
+
+test("hermes bridge: builds a least-privilege MCP config snapshot", () => {
+  const r = new ToolRegistry();
+  for (const [name, tag] of [["read_note", "public"], ["delete_note", "dangerous"]] as const) {
+    r.register(
+      defineTool({
+        name,
+        description: `${name} test tool`,
+        inputSchema: { type: "object", properties: {} },
+        tags: [tag],
+        handler: async () => ok({}),
+      }),
+    );
+  }
+
+  const config = createHermesMcpConfig(r, {
+    serverName: "openfunctions_notes",
+    command: "node",
+    args: ["/workspace/dist/src/index.js"],
+    filter: (tool) => tool.tags?.includes("public") ?? false,
+    timeout: 120,
+    connectTimeout: 30,
+    supportsParallelToolCalls: true,
+    resources: false,
+    prompts: false,
+  });
+
+  assert.deepEqual(config, {
+    mcp_servers: {
+      openfunctions_notes: {
+        command: "node",
+        args: ["/workspace/dist/src/index.js"],
+        timeout: 120,
+        connect_timeout: 30,
+        supports_parallel_tool_calls: true,
+        tools: {
+          include: ["read_note"],
+          resources: false,
+          prompts: false,
+        },
+      },
+    },
+  });
+});
+
+test("hermes bridge: rejects invalid timeouts", () => {
+  assert.throws(
+    () => createHermesMcpConfig(new ToolRegistry(), { command: "node", timeout: 0 }),
+    /positive number/,
+  );
 });
 
 // ─────────────────────────────────────────────────────────────────────────

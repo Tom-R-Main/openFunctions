@@ -1,11 +1,20 @@
 {
   "id": "openfunctions-demo",
-  "contracts": {
-    "tools": ["of_calculate", "of_convert_units"]
+  "name": "openFunctions Demo",
+  "description": "Reference plugin exposing openFunctions defineTool() definitions through OpenClaw's generated tool-plugin contract.",
+  "version": "0.2.0",
+  "activation": {
+    "onStartup": true
   },
   "configSchema": {
     "type": "object",
-    "additionalProperties": false,
-    "properties": {}
+    "properties": {},
+    "additionalProperties": false
+  },
+  "contracts": {
+    "tools": [
+      "of_calculate",
+      "of_convert_units"
+    ]
   }
 }

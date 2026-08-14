@@ -159,14 +159,37 @@ export type { ChatContent, ContentPart, TextContentPart, ImageContentPart } from
 // Test runner
 export { runTests } from "./test-runner.js";
 
-// Openclaw bridge
-export { toOpenclawTools, toolToOpenclaw } from "./openclaw.js";
+// Agent runtime bridges
+export {
+  toOpenclawTools,
+  toolToOpenclaw,
+  toOpenclawToolPluginTools,
+} from "./openclaw.js";
 export type {
   OpenclawToolShape,
   OpenclawToolResult,
   OpenclawToolContentBlock,
   ToOpenclawToolsOptions,
+  OpenclawToolPluginExecutionContext,
+  OpenclawToolPluginToolShape,
+  ToOpenclawToolPluginToolsOptions,
 } from "./openclaw.js";
+export { toPiTools, toolToPi, registerPiTools } from "./pi.js";
+export type {
+  PiTextContent,
+  PiToolResult,
+  PiExtensionContextLike,
+  PiToolShape,
+  PiExtensionApiLike,
+  ToPiToolsOptions,
+} from "./pi.js";
+export { createHermesMcpConfig } from "./hermes.js";
+export type {
+  HermesMcpToolFilter,
+  HermesMcpStdioServerConfig,
+  HermesMcpConfig,
+  CreateHermesMcpConfigOptions,
+} from "./hermes.js";
 
 // Types (for students who want TypeScript help)
 export type {
