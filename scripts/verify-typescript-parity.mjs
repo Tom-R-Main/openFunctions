@@ -55,6 +55,17 @@ function normalizeDeclaration(source, fileName) {
   const transformer = (context) => {
     const visit = (node) => {
       const visited = ts.visitEachChild(node, visit, context);
+      if (
+        ts.isLiteralTypeNode(visited) &&
+        ts.isStringLiteral(visited.literal)
+      ) {
+        // The declaration emitters may choose different quote styles for
+        // inferred string-literal types. Quote style is not semantic, so
+        // rebuild the literal before comparing declarations.
+        return ts.factory.createLiteralTypeNode(
+          ts.factory.createStringLiteral(visited.literal.text),
+        );
+      }
       if (!ts.isUnionTypeNode(visited)) return visited;
       const sorted = [...visited.types].sort((left, right) =>
         printer
