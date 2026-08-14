@@ -137,7 +137,7 @@ test("openai: parallel_tool_calls on, no max_tokens, temperature only off-reason
   // No reasoning effort → temperature present, no reasoning payload.
   let cap = mockFetch(TEXT_ONLY_OPENAI);
   try {
-    await createOpenRouterAdapter({ apiKey: "test" }).chat([{ role: "user", content: "go" }], buildRegistry());
+    await createOpenRouterAdapter({ apiKey: "test", reasoningEffort: "none" }).chat([{ role: "user", content: "go" }], buildRegistry());
     assert.equal(cap.bodies[0].parallel_tool_calls, true);
     assert.equal("max_tokens" in cap.bodies[0], false, "max_tokens must be omitted");
     assert.equal(cap.bodies[0].temperature, 0.7);
@@ -197,14 +197,15 @@ test("anthropic: rebuild leads with thinking, merges tool_results into one user 
   }
 });
 
-test("anthropic: thinking on → budget + serialized; thinking off → parallel allowed, default max_tokens", async () => {
-  // thinking on
+test("anthropic: current models use adaptive effort; thinking off allows parallel tools", async () => {
+  // Adaptive thinking on
   let cap = mockFetch(TEXT_ONLY_ANTHROPIC);
   try {
     await createAnthropicAdapter({ apiKey: "test", reasoningEffort: "high" }).chat([{ role: "user", content: "go" }], buildRegistry());
     const body = cap.bodies[0];
-    assert.equal((body.thinking as any).type, "enabled");
-    assert.ok(body.max_tokens > (body.thinking as any).budget_tokens, "max_tokens must exceed the thinking budget");
+    assert.equal((body.thinking as any).type, "adaptive");
+    assert.deepEqual(body.output_config, { effort: "high" });
+    assert.ok(body.max_tokens > 8192, "adaptive thinking needs answer and reasoning headroom");
     assert.equal(body.tool_choice.disable_parallel_tool_use, true, "thinking disables parallel tool use");
   } finally {
     restoreFetch();
@@ -212,9 +213,9 @@ test("anthropic: thinking on → budget + serialized; thinking off → parallel 
   // thinking off
   cap = mockFetch(TEXT_ONLY_ANTHROPIC);
   try {
-    await createAnthropicAdapter({ apiKey: "test" }).chat([{ role: "user", content: "go" }], buildRegistry());
+    await createAnthropicAdapter({ apiKey: "test", reasoningEffort: "none" }).chat([{ role: "user", content: "go" }], buildRegistry());
     const body = cap.bodies[0];
-    assert.equal("thinking" in body, false);
+    assert.deepEqual(body.thinking, { type: "disabled" });
     assert.equal(body.max_tokens, 8192, "non-thinking default max_tokens");
     assert.equal("temperature" in body, false, "anthropic never sends temperature");
     assert.notEqual(body.tool_choice.disable_parallel_tool_use, true, "parallel allowed without thinking");
@@ -230,14 +231,44 @@ test("anthropic: thinking on → budget + serialized; thinking off → parallel 
 test("gemini: parses multiple functionCall parts into toolCalls", async () => {
   mockFetch({
     candidates: [{ content: { parts: [
-      { functionCall: { name: "read_file", args: { path: "a" } } },
-      { functionCall: { name: "list_dir", args: { path: "." } } },
+      { functionCall: { id: "g1", name: "read_file", args: { path: "a" } }, thoughtSignature: "sig-1" },
+      { functionCall: { id: "g2", name: "list_dir", args: { path: "." } }, thoughtSignature: "sig-2" },
     ] } }],
   });
   try {
     const res = await createGeminiAdapter({ apiKey: "test" }).chat([{ role: "user", content: "go" }], buildRegistry());
     assert.equal(res.toolCalls?.length, 2);
     assert.deepEqual(res.toolCalls?.map((c) => c.name), ["read_file", "list_dir"]);
+    assert.equal((res.thinking?.[0] as any).thoughtSignature, "sig-1");
+  } finally {
+    restoreFetch();
+  }
+});
+
+test("gemini: replays function-call thought signatures unchanged", async () => {
+  const cap = mockFetch(TEXT_ONLY_GEMINI);
+  try {
+    const signedPart = {
+      functionCall: { id: "g1", name: "read_file", args: { path: "a" } },
+      thoughtSignature: "opaque-signature",
+    };
+    await createGeminiAdapter({ apiKey: "test" }).chat([
+      { role: "user", content: "go" },
+      {
+        role: "assistant",
+        content: "",
+        toolCalls: [{ id: "g1", name: "read_file", args: { path: "a" } }],
+        thinkingBlocks: [signedPart],
+      },
+      {
+        role: "tool",
+        content: JSON.stringify({ success: true }),
+        toolCallId: "g1",
+        toolName: "read_file",
+      },
+    ], buildRegistry());
+    const model = cap.bodies[0].contents.find((c: any) => c.role === "model");
+    assert.deepEqual(model.parts, [signedPart]);
   } finally {
     restoreFetch();
   }
@@ -256,6 +287,7 @@ test("gemini: rebuilds tool calls as functionCall parts + merges functionRespons
     const fnContents = contents.filter((c: any) => c.role === "function");
     assert.equal(fnContents.length, 1, "functionResponses must be merged");
     assert.equal(fnContents[0].parts.length, 2);
+    assert.deepEqual(fnContents[0].parts.map((p: any) => p.functionResponse.id), ["t1", "t2"]);
   } finally {
     restoreFetch();
   }
@@ -266,6 +298,8 @@ test("gemini: omits maxOutputTokens so reasoning isn't truncated", async () => {
   try {
     await createGeminiAdapter({ apiKey: "test" }).chat([{ role: "user", content: "go" }], buildRegistry());
     assert.equal("maxOutputTokens" in cap.bodies[0].generationConfig, false);
+    assert.equal("temperature" in cap.bodies[0].generationConfig, false);
+    assert.equal(cap.bodies[0].generationConfig.thinkingConfig.thinkingLevel, "low");
   } finally {
     restoreFetch();
   }

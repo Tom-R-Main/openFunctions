@@ -248,6 +248,9 @@ The `ContextProvider` interface is pluggable — implement `metadata`, `connect(
 npm run test-tools          # Interactive CLI — test tools locally
 npm run dev                 # Dev mode — auto-restarts on save
 npm test                    # Run tool-defined automated tests
+npm run typecheck           # Native TypeScript 7 diagnostics
+npm run typecheck:ts6       # TypeScript 6 compatibility diagnostics
+npm run verify:typescript   # Verify TS7/TS6 ownership and emitted parity
 npm run chat                # Chat with AI using your tools
 npm run chat -- gemini      # Force a specific provider
 npm run chat -- --no-memory # Chat without persistent memory
@@ -261,20 +264,33 @@ npm start                   # Start MCP server for Claude Desktop / Cursor
 
 Set one API key in `.env` and the chat loop will auto-detect the provider.
 
-| Provider | Default Model | API |
-|----------|---------------|-----|
-| Gemini | `gemini-3-flash-preview` | Function calling |
-| OpenAI | `gpt-5.5` | Responses API |
-| Anthropic | `claude-sonnet-4-6` | Messages + tool_use |
-| xAI | `grok-4.20-0309-reasoning` | Responses API |
-| OpenRouter | `google/gemini-3-flash-preview` | OpenAI-compatible |
+Defaults are resolved by workload role, then the exact choice is recorded in
+each run manifest. The catalog is dated so model churn stays out of application
+code. These are the current defaults for the adapters' default roles:
+
+| Provider | Default role | Current model | API |
+|----------|--------------|---------------|-----|
+| Gemini | `instant` | `gemini-3.7-flash` | Function calling |
+| OpenAI | `expert` | `gpt-5.6-terra` (`medium`) | Responses API |
+| Anthropic | `expert` | `claude-sonnet-5` (`medium`) | Messages + adaptive thinking + tool_use |
+| xAI | `expert` | `grok-4.5` (`medium`) | Responses API |
+| OpenRouter | `instant` | `google/gemini-3.7-flash` | OpenAI-compatible |
+
+Choose a stable role when you do not need to pin a model:
+
+```typescript
+const agent = await createChatAgent({
+  provider: "openai",
+  modelRole: "frontier", // currently gpt-5.6-sol with low reasoning
+});
+```
 
 Examples:
 
 ```bash
 npm run chat
 npm run chat -- gemini
-npm run chat -- openai gpt-5.5
+npm run chat -- openai gpt-5.6-terra
 npm run chat -- gemini --prompt study-buddy
 ```
 
@@ -312,6 +328,8 @@ The registry validates parameters before handlers run, so schema errors are surf
 ## Docs
 
 - [Architecture](docs/ARCHITECTURE.md): the runtime model, filtered registries, synthetic tools, and execution paths
+- [Legible runs](docs/RUNS.md): run manifests, outcome claims, verification, assurance, and fulfillment
+- [TypeScript 7 and 6](docs/TYPESCRIPT.md): native TS7 builds with the TS6 compatibility/programmatic API
 - [RAG](docs/RAG.md): semantic chunking, Gemini/OpenAI embeddings, pgvector schema, HNSW search, and tool integration
 
 ## Integrations

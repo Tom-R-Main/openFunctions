@@ -259,18 +259,18 @@ npm start                   # เริ่มเซิร์ฟเวอร์ M
 
 | ผู้ให้บริการ | โมเดลเริ่มต้น | API |
 |----------|---------------|-----|
-| Gemini | `gemini-3-flash-preview` | การเรียกใช้ฟังก์ชัน |
-| OpenAI | `gpt-5.4` | API การตอบกลับ |
-| Anthropic | `claude-sonnet-4-6` | ข้อความ + การใช้เครื่องมือ |
-| xAI | `grok-4.20-0309-reasoning` | API การตอบกลับ |
-| OpenRouter | `google/gemini-3-flash-preview` | เข้ากันได้กับ OpenAI |
+| Gemini | `gemini-3.7-flash` | การเรียกใช้ฟังก์ชัน |
+| OpenAI | `gpt-5.6-terra` | API การตอบกลับ |
+| Anthropic | `claude-sonnet-5` | ข้อความ + การใช้เครื่องมือ |
+| xAI | `grok-4.5` | API การตอบกลับ |
+| OpenRouter | `google/gemini-3.7-flash` | เข้ากันได้กับ OpenAI |
 
 ตัวอย่าง:
 
 ```bash
 npm run chat
 npm run chat -- gemini
-npm run chat -- openai gpt-5.4-pro
+npm run chat -- openai gpt-5.6-terra
 npm run chat -- gemini --prompt study-buddy
 ```
 

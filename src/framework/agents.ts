@@ -31,12 +31,23 @@
  * ```
  */
 
+import { randomUUID } from "node:crypto";
 import type { ToolResult, ToolDefinition, InputSchema } from "./types.js";
 import type { AIAdapter, ChatMessage } from "./adapters/types.js";
 import { ToolRegistry } from "./registry.js";
 import { composePrompt, autoToolGuide } from "./prompts.js";
 import { defineTool, ok } from "./tool.js";
 import { forceStructuredOutput } from "./structured.js";
+import {
+  completeRun,
+  createOutcomeClaim,
+  createRunManifest,
+  failRun,
+  RunExecutionError,
+  type OutcomeClaim,
+  type RunContext,
+  type RunRecord,
+} from "./runs.js";
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 
@@ -66,8 +77,11 @@ export interface Agent {
     adapter: AIAdapter,
     registry: ToolRegistry,
     context?: string,
+    options?: AgentRunOptions,
   ): Promise<AgentResult>;
 }
+
+export interface AgentRunOptions extends RunContext {}
 
 export interface AgentResult {
   /** The agent's final text output */
@@ -76,6 +90,10 @@ export interface AgentResult {
   toolCalls: Array<{ name: string; args: Record<string, unknown>; result: ToolResult }>;
   /** Number of LLM rounds consumed */
   rounds: number;
+  /** Immutable record of this execution attempt. */
+  run: RunRecord;
+  /** What the run claims it produced. Absent when the loop hit its limit. */
+  outcome?: OutcomeClaim;
   /**
    * True when the loop terminated because it hit maxRounds rather than
    * reaching a final text response. Callers (especially crew runners)
@@ -224,6 +242,7 @@ export function defineAgent(definition: AgentDefinition): Agent {
       adapter: AIAdapter,
       registry: ToolRegistry,
       context?: string,
+      options?: AgentRunOptions,
     ): Promise<AgentResult> {
       // Build a filtered registry for this agent
       const agentRegistry = new ToolRegistry();
@@ -259,61 +278,85 @@ export function defineAgent(definition: AgentDefinition): Agent {
       const toolCalls: AgentResult["toolCalls"] = [];
       const maxRounds = definition.maxRounds ?? 10;
       let rounds = 0;
+      let run = createRunManifest({
+        ...options,
+        actor: { kind: "agent", name: definition.name },
+        adapter,
+        instructions: systemPrompt,
+        tools: agentRegistry.getAll(),
+        maxRounds,
+      });
 
       // Agent loop — reason, act, observe, repeat
-      while (rounds < maxRounds) {
-        rounds++;
+      try {
+        while (rounds < maxRounds) {
+          rounds++;
 
-        const response = await adapter.chat(
-          messages,
-          agentRegistry,
-          {
-            systemPrompt,
-            // First call of this agent — reset stateful adapter session
-            // so we don't thread onto another agent's prior conversation
-            // when the same adapter is shared across a crew.
-            resetSession: rounds === 1,
-          },
-        );
+          const response = await adapter.chat(
+            messages,
+            agentRegistry,
+            {
+              systemPrompt,
+              // First call of this agent — reset stateful adapter session
+              // so we don't thread onto another agent's prior conversation
+              // when the same adapter is shared across a crew.
+              resetSession: rounds === 1,
+            },
+          );
 
-        if (response.toolCall) {
-          const { id, name, args } = response.toolCall;
+          if (response.toolCall) {
+            const { id, name, args } = response.toolCall;
 
-          messages.push({
-            role: "assistant",
-            content: JSON.stringify(args),
-            toolCallId: id,
-            toolName: name,
-          });
+            messages.push({
+              role: "assistant",
+              content: JSON.stringify(args),
+              toolCallId: id,
+              toolName: name,
+            });
 
-          const result = await agentRegistry.execute(name, args);
-          toolCalls.push({ name, args, result });
+            const result = await agentRegistry.execute(name, args);
+            toolCalls.push({ name, args, result });
 
-          messages.push({
-            role: "tool",
-            content: JSON.stringify(result),
-            toolCallId: id,
-            toolName: name,
-          });
-          continue;
+            messages.push({
+              role: "tool",
+              content: JSON.stringify(result),
+              toolCallId: id,
+              toolName: name,
+            });
+            continue;
+          }
+
+          const output = response.text ?? "";
+          run = completeRun(run);
+          return {
+            output,
+            toolCalls,
+            rounds,
+            run,
+            ...(output && { outcome: createOutcomeClaim(run, output) }),
+          };
         }
 
+        console.warn(
+          `⚠️  agent "${definition.name}" hit maxRounds (${maxRounds}) without a final response`,
+        );
+        run = completeRun(run, { limitReached: true });
         return {
-          output: response.text ?? "",
+          output: "(agent exceeded max rounds)",
           toolCalls,
           rounds,
+          run,
+          truncated: true,
         };
+      } catch (error) {
+        if (error instanceof RunExecutionError) throw error;
+        run = failRun(run, error);
+        throw new RunExecutionError(
+          `Agent "${definition.name}" failed: ${error instanceof Error ? error.message : String(error)}`,
+          run,
+          { cause: error },
+        );
       }
-
-      console.warn(
-        `⚠️  agent "${definition.name}" hit maxRounds (${maxRounds}) without a final response`,
-      );
-      return {
-        output: "(agent exceeded max rounds)",
-        toolCalls,
-        rounds,
-        truncated: true,
-      };
     },
   };
 }
@@ -759,6 +802,7 @@ export async function runTaskCrew(
   // model calls burn tokens.
   const byName = new Map(agents.map((a) => [a.name, a]));
   const resolved = tasks.map((t) => ({ task: t, agent: resolveAgent(t.agent, byName) }));
+  const correlationId = randomUUID();
 
   const results: TaskResult[] = [];
   for (let i = 0; i < resolved.length; i++) {
@@ -768,7 +812,10 @@ export async function runTaskCrew(
       ? `${task.description}\n\nExpected output: ${task.expectedOutput}`
       : task.description;
 
-    const run = await agent.run(prompt, adapter, registry, context);
+    const run = await agent.run(prompt, adapter, registry, context, {
+      taskId: task.id,
+      correlationId,
+    });
     results.push(await coerceTaskOutput(task, agent, run, adapter, registry));
   }
 
@@ -885,7 +932,9 @@ async function runHierarchicalTaskCrew(
   }
 
   const brief = renderBrief(tasks, workers);
-  const run = await boss.run(brief, adapter, managerRegistry);
+  const run = await boss.run(brief, adapter, managerRegistry, undefined, {
+    correlationId: randomUUID(),
+  });
 
   return {
     output: run.output,

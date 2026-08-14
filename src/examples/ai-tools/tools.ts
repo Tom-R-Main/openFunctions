@@ -18,7 +18,7 @@ import { defineTool, ok, err } from "../../framework/index.js";
 
 // ─── Gemini API Helper ─────────────────────────────────────────────────────
 
-const GEMINI_MODEL = "gemini-2.5-flash";
+const GEMINI_MODEL = "gemini-3.7-flash";
 
 async function callGemini(prompt: string, systemInstruction?: string): Promise<string> {
   const apiKey = process.env.GEMINI_API_KEY;

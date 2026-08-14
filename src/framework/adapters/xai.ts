@@ -4,12 +4,13 @@
  * Uses xAI's Responses API (stateful, like OpenAI's Responses API).
  *
  * Env: XAI_API_KEY
- * Default model: grok-4.20-0309-reasoning
+ * Default role: expert (currently grok-4.5)
  * Console: https://console.x.ai
  */
 
 import type { AIAdapter, AdapterConfig, ChatMessage, ChatOptions, AdapterResponse } from "./types.js";
 import type { ToolRegistry } from "../registry.js";
+import { resolveModelSelection } from "../models.js";
 import { chatContentToText, imageDataUrl } from "./content.js";
 
 export function createXAIAdapter(config?: Partial<AdapterConfig>): AIAdapter {
@@ -20,13 +21,19 @@ export function createXAIAdapter(config?: Partial<AdapterConfig>): AIAdapter {
     );
   }
 
-  const model = config?.model ?? "grok-4.20-0309-reasoning";
+  const modelSelection = resolveModelSelection("xai", {
+    role: config?.modelRole ?? "expert",
+    model: config?.model,
+    reasoningEffort: config?.reasoningEffort,
+  });
+  const { model, reasoningEffort } = modelSelection;
   const systemPrompt = config?.systemPrompt ?? "You are a helpful assistant with access to tools. Use tools when they're relevant.";
   let previousResponseId: string | undefined;
 
   return {
     name: config?.name ?? "Grok",
     model,
+    modelSelection,
 
     async chat(messages: ChatMessage[], registry: ToolRegistry, options?: ChatOptions): Promise<AdapterResponse> {
       // Build input for xAI Responses API
@@ -74,10 +81,17 @@ export function createXAIAdapter(config?: Partial<AdapterConfig>): AIAdapter {
         model,
         input,
         tools,
-        temperature: 0.7,
         // See anthropic.ts — adapter is single-call, so disable parallel
         // tool calls to avoid orphaned tool_use_ids on the next round.
         parallel_tool_calls: false,
+      };
+
+      body.reasoning = {
+        effort: reasoningEffort === "none" || reasoningEffort === "minimal"
+          ? "low"
+          : reasoningEffort === "xhigh" || reasoningEffort === "max"
+            ? "high"
+            : reasoningEffort,
       };
 
       if (useSession) {

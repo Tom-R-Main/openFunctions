@@ -9,6 +9,7 @@
 
 import type { AIAdapter, AdapterConfig, ChatMessage, ChatOptions, AdapterResponse, ReasoningEffort } from "./types.js";
 import type { ToolRegistry } from "../registry.js";
+import { resolveModelSelection, type ModelSelection } from "../models.js";
 import { chatContentToText, imageDataUrl, normalizeChatContent } from "./content.js";
 
 // ─── OpenAI Responses API ──────────────────────────────────────────────────
@@ -21,18 +22,19 @@ export function createOpenAIAdapter(config?: Partial<AdapterConfig>): AIAdapter 
     );
   }
 
-  // Default to gpt-5.5 (released 2026-04-23). Per OpenAI's "Using GPT-5.5"
-  // guide, treat it as a new model family — defaults to medium reasoning
-  // effort and tends to produce more concise, efficient output. Override
-  // via config.model (e.g. "gpt-5.5-2026-04-23" for a pinned version, or
-  // an earlier model like "gpt-5.4" for back-compat).
-  const model = config?.model ?? "gpt-5.5";
+  const modelSelection = resolveModelSelection("openai", {
+    role: config?.modelRole ?? "expert",
+    model: config?.model,
+    reasoningEffort: config?.reasoningEffort,
+  });
+  const { model, reasoningEffort } = modelSelection;
   const systemPrompt = config?.systemPrompt ?? "You are a helpful assistant with access to tools. Use tools when they're relevant.";
   let previousResponseId: string | undefined;
 
   return {
     name: config?.name ?? "OpenAI",
     model,
+    modelSelection,
 
     async chat(messages: ChatMessage[], registry: ToolRegistry, options?: ChatOptions): Promise<AdapterResponse> {
       // resetSession: caller is starting a new logical conversation
@@ -76,12 +78,17 @@ export function createOpenAIAdapter(config?: Partial<AdapterConfig>): AIAdapter 
         model,
         input,
         tools,
-        temperature: 0.7,
         // Disable parallel tool calls — adapter only returns one tool_call
         // per round; running multiple in parallel orphans the rest. See
         // anthropic.ts for the same conservative fix.
         parallel_tool_calls: false,
       };
+
+      if (reasoningEffort === "none") {
+        body.temperature = 0.7;
+      } else {
+        body.reasoning = { effort: reasoningEffort };
+      }
 
       if (useSession) {
         body.previous_response_id = previousResponseId;
@@ -147,6 +154,7 @@ interface ChatCompletionsConfig {
   baseUrl: string;
   systemPrompt?: string;
   reasoningEffort?: ReasoningEffort;
+  modelSelection?: ModelSelection;
 }
 
 /**
@@ -154,12 +162,13 @@ interface ChatCompletionsConfig {
  * Used by OpenRouter and any other compatible provider.
  */
 function createChatCompletionsAdapter(config: ChatCompletionsConfig): AIAdapter {
-  const { name, model, apiKey, baseUrl, reasoningEffort } = config;
+  const { name, model, apiKey, baseUrl, reasoningEffort, modelSelection } = config;
   const sysPrompt = config.systemPrompt ?? "You are a helpful assistant with access to tools. Use tools when they're relevant.";
 
   return {
     name,
     model,
+    ...(modelSelection && { modelSelection }),
 
     async chat(messages: ChatMessage[], registry: ToolRegistry, options?: ChatOptions): Promise<AdapterResponse> {
       const openaiMessages: any[] = [{
@@ -299,7 +308,7 @@ function chatCompletionsContent(content: ChatMessage["content"]): unknown {
  * OpenRouter — any model from any provider via a unified API.
  *
  * Env: OPENROUTER_API_KEY
- * Default model: google/gemini-3-flash-preview
+ * Default role: instant (currently google/gemini-3.7-flash)
  * Browse models: https://openrouter.ai/models
  */
 export function createOpenRouterAdapter(config?: Partial<AdapterConfig>): AIAdapter {
@@ -310,12 +319,19 @@ export function createOpenRouterAdapter(config?: Partial<AdapterConfig>): AIAdap
     );
   }
 
+  const modelSelection = resolveModelSelection("openrouter", {
+    role: config?.modelRole ?? "instant",
+    model: config?.model,
+    reasoningEffort: config?.reasoningEffort,
+  });
+
   return createChatCompletionsAdapter({
     name: config?.name ?? "OpenRouter",
-    model: config?.model ?? "google/gemini-3-flash-preview",
+    model: modelSelection.model,
     apiKey,
     baseUrl: "https://openrouter.ai/api/v1",
     systemPrompt: config?.systemPrompt,
-    reasoningEffort: config?.reasoningEffort,
+    reasoningEffort: modelSelection.reasoningEffort,
+    modelSelection,
   });
 }

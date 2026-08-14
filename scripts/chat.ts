@@ -10,7 +10,7 @@ import "../src/framework/env.js";
  * Usage:
  *   npm run chat                                    # auto-detect provider + default prompt
  *   npm run chat -- gemini                          # specific provider
- *   npm run chat -- gemini gemini-2.5-flash         # specific model
+ *   npm run chat -- gemini gemini-3.7-flash         # specific model
  *   npm run chat -- gemini --prompt study-buddy     # preset prompt
  *   npm run chat -- gemini --prompt "You are X"     # inline prompt
  *   npm run chat -- --no-memory                     # disable persistent memory
@@ -61,7 +61,7 @@ try {
   if (msg.includes("provider") || msg.includes("API key")) {
     console.error("  Usage:");
     console.error("    npm run chat -- gemini");
-    console.error("    npm run chat -- gemini gemini-2.5-flash");
+    console.error("    npm run chat -- gemini gemini-3.7-flash");
     console.error("    npm run chat -- gemini --prompt study-buddy");
     console.error(`    npm run chat -- gemini --prompt "You are a pirate"`);
     console.error("    npm run chat -- --no-memory\n");

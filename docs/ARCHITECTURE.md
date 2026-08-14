@@ -19,6 +19,7 @@ A tool bundles:
 - a JSON schema for parameters
 - an async handler
 - optional tags, examples, and tests
+- an optional capability contract for authority, side effects, idempotency, and verification
 
 The TypeScript generic helps the developer. The `inputSchema` helps the model.
 
@@ -118,6 +119,12 @@ Agent loop:
 6. repeat until the model returns text or max rounds is hit
 
 That is why agents stay legible: they are still just tools plus a loop.
+
+Every agent loop also emits a `RunRecord`. The run captures the exact resolved
+model, instruction and capability digests, correlation IDs, limits, and its own
+terminal status. A successful text response may create an `OutcomeClaim`, but
+verification and task fulfillment remain separate records. See [Legible
+runs](RUNS.md).
 
 ### Crews
 

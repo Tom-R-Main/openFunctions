@@ -49,6 +49,7 @@ const ENV_DETECTION_ORDER: Array<{ env: string; factory: AdapterFactory }> = [
 export function resolveAdapter(config: ChatAgentConfig, systemPrompt?: string): AIAdapter {
   const opts: Partial<AdapterConfig> = {};
   if (config.model) opts.model = config.model;
+  if (config.modelRole) opts.modelRole = config.modelRole;
   if (systemPrompt) opts.systemPrompt = systemPrompt;
   if (config.reasoningEffort) opts.reasoningEffort = config.reasoningEffort;
 

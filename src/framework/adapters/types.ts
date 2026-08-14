@@ -6,6 +6,7 @@
  */
 
 import type { ToolRegistry } from "../registry.js";
+import type { ModelRole, ModelSelection } from "../models.js";
 
 /** Text or multimodal content in a conversation message. */
 export type TextContentPart = { type: "text"; text: string };
@@ -30,7 +31,7 @@ export type ChatContent = string | ContentPart[];
  * - Anthropic has no effort levels — adapters translate the level to an
  *   extended-thinking `budget_tokens` value. `none`/`minimal` disable thinking.
  */
-export type ReasoningEffort = "none" | "minimal" | "low" | "medium" | "high" | "xhigh";
+export type ReasoningEffort = "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max";
 
 /** A single tool/function call requested by the model. */
 export interface ToolCall {
@@ -95,6 +96,9 @@ export interface AdapterConfig {
   /** Model to use */
   model: string;
 
+  /** Workload role used to resolve the provider's default model. */
+  modelRole?: ModelRole;
+
   /** API key */
   apiKey: string;
 
@@ -142,6 +146,9 @@ export interface AIAdapter {
 
   /** Model being used */
   readonly model: string;
+
+  /** Exact role/model resolution persisted in legible run manifests. */
+  readonly modelSelection?: ModelSelection;
 
   /**
    * Send a conversation to the AI with tools available.

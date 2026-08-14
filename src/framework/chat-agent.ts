@@ -50,6 +50,13 @@ import type {
   ServeOptions,
   MemoryConfig,
 } from "./chat-agent-types.js";
+import {
+  completeRun,
+  createOutcomeClaim,
+  createRunManifest,
+  failRun,
+  RunExecutionError,
+} from "./runs.js";
 
 // ─── Factory ───────────────────────────────────────────────────────────────
 
@@ -219,6 +226,14 @@ class ChatAgentImpl implements ChatAgent {
     this.switchThreadIfNeeded(options?.threadId);
     const currentThreadId = this.threadId;
     const promptOverride = options?.systemPrompt;
+    let run = createRunManifest({
+      ...options?.run,
+      actor: { kind: "chat_agent", name: this.name },
+      adapter: this.adapter,
+      instructions: promptOverride ?? this.systemPrompt,
+      tools: this.registry.getAll(),
+      maxRounds: this.maxToolRounds,
+    });
 
     // Snapshot history length so we can roll back if the turn fails.
     // Without this, a transient adapter error leaves an orphan user
@@ -353,7 +368,13 @@ class ChatAgentImpl implements ChatAgent {
       }
     } catch (error) {
       this.history.length = historyLengthBefore;
-      throw error;
+      if (error instanceof RunExecutionError) throw error;
+      run = failRun(run, error);
+      throw new RunExecutionError(
+        `Chat agent "${this.name}" failed: ${error instanceof Error ? error.message : String(error)}`,
+        run,
+        { cause: error },
+      );
     }
 
     if (!finalText) {
@@ -374,10 +395,17 @@ class ChatAgentImpl implements ChatAgent {
       });
     }
 
+    run = completeRun(run, { limitReached: maxRounds < 0 });
+    const outcome = assistantTurnComplete
+      ? createOutcomeClaim(run, finalText)
+      : undefined;
+
     return {
       text: finalText,
       toolCalls,
       rounds,
+      run,
+      ...(outcome && { outcome }),
       metadata: {
         provider: this.provider,
         model: this.model,
@@ -395,6 +423,14 @@ class ChatAgentImpl implements ChatAgent {
     this.switchThreadIfNeeded(options?.threadId);
     const currentThreadId = this.threadId;
     const promptOverride = options?.systemPrompt;
+    let run = createRunManifest({
+      ...options?.run,
+      actor: { kind: "chat_agent", name: this.name },
+      adapter: this.adapter,
+      instructions: promptOverride ?? this.systemPrompt,
+      tools: this.registry.getAll(),
+      maxRounds: this.maxToolRounds,
+    });
 
     // See chatAsync for why we snapshot before the user push.
     const historyLengthBefore = this.history.length;
@@ -526,7 +562,13 @@ class ChatAgentImpl implements ChatAgent {
       }
     } catch (error) {
       this.history.length = historyLengthBefore;
-      throw error;
+      if (error instanceof RunExecutionError) throw error;
+      run = failRun(run, error);
+      throw new RunExecutionError(
+        `Chat agent "${this.name}" failed: ${error instanceof Error ? error.message : String(error)}`,
+        run,
+        { cause: error },
+      );
     }
 
     if (!finalText) {
@@ -545,12 +587,19 @@ class ChatAgentImpl implements ChatAgent {
       });
     }
 
+    run = completeRun(run, { limitReached: maxRounds < 0 });
+    const outcome = assistantTurnComplete
+      ? createOutcomeClaim(run, finalText)
+      : undefined;
+
     yield {
       type: "done",
       result: {
         text: finalText,
         toolCalls,
         rounds,
+        run,
+        ...(outcome && { outcome }),
         metadata: {
           provider: this.provider,
           model: this.model,

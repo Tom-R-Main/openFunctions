@@ -20,8 +20,8 @@ import { defineTool, ok } from "../src/framework/tool.js";
 const provider = process.env.TASKCREW_PROVIDER ?? "anthropic";
 const adapter =
   provider === "gemini"
-    ? createGeminiAdapter({ model: "gemini-2.5-flash" })
-    : createAnthropicAdapter({ model: "claude-sonnet-4-6" });
+    ? createGeminiAdapter({ model: "gemini-3.7-flash" })
+    : createAnthropicAdapter({ model: "claude-sonnet-5" });
 
 console.log(`\n🤖 Using adapter: ${adapter.name} (${adapter.model})\n`);
 

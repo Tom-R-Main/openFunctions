@@ -27,6 +27,63 @@ export interface InputSchema {
   required?: string[];
 }
 
+// ─── Capability Contract ──────────────────────────────────────────────────
+
+/** How consequential a capability's successful effect can be. */
+export type CommitmentClass = "C0" | "C1" | "C2" | "C3" | "C4";
+
+/** Duplicate-call behavior callers must understand before retrying. */
+export type IdempotencyBehavior =
+  | "idempotent"
+  | "idempotent_with_key"
+  | "non_idempotent";
+
+/**
+ * Optional machine-readable semantics for a tool.
+ *
+ * The ordinary description and JSON Schema remain the beginner path. Add a
+ * contract when an agent needs to reason about authority, side effects,
+ * retries, and proof instead of inferring those properties from prose.
+ */
+export interface CapabilityContract {
+  /** Version of this capability contract, independent of package version. */
+  version: string;
+  /** Situations in which selecting this capability is appropriate. */
+  useWhen: string[];
+  /** Decision boundaries that should select a different capability or stop. */
+  doNotUseWhen: string[];
+  /** Externally observable effects, or an empty array for a read-only tool. */
+  sideEffects: string[];
+  /** Preconditions that must hold before invocation. */
+  preconditions?: string[];
+  /** Whether this capability can mutate state. */
+  mutation?: boolean;
+  /** Highest commitment this capability can make. */
+  commitmentClass: CommitmentClass;
+  /** What a duplicate request means. */
+  idempotency: IdempotencyBehavior;
+  /** Input field used as the idempotency key, when applicable. */
+  idempotencyKeyField?: string;
+  /** Observable response to an exact duplicate. */
+  duplicateBehavior?: string;
+  /** How effects can be recovered when execution must be undone. */
+  reversibility?: "read_only" | "reversible" | "compensatable" | "irreversible";
+  /** Whether the capability supports a non-committing preview. */
+  dryRunSupported?: boolean;
+  /** Named limits such as timeouts, retry ceilings, or quantity caps. */
+  bounds?: Record<string, number | string | boolean>;
+  /** Optimistic-concurrency and fencing requirements. */
+  concurrency?: {
+    revisionField?: string;
+    leaseRequired?: boolean;
+    fencingRequired?: boolean;
+  };
+  /** Whether an explicit authority grant is required before execution. */
+  requiresAuthority?: boolean;
+  /** Verification methods required after a successful effect. */
+  requiredVerification?: string[];
+}
+
 // ─── Tool Definition ────────────────────────────────────────────────────────
 
 export interface ToolDefinition<
@@ -53,6 +110,9 @@ export interface ToolDefinition<
 
   /** Optional test cases — run with `npm test` */
   tests?: ToolTest[];
+
+  /** Optional execution semantics for consequential or delegated work. */
+  contract?: CapabilityContract;
 }
 
 // ─── Tool Test ─────────────────────────────────────────────────────────────

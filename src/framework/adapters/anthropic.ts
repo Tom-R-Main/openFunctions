@@ -2,11 +2,12 @@
  * Anthropic Adapter (Claude)
  *
  * Env: ANTHROPIC_API_KEY
- * Default model: claude-sonnet-4-6
+ * Default role: expert (currently claude-sonnet-5)
  */
 
 import type { AIAdapter, AdapterConfig, ChatMessage, ChatOptions, AdapterResponse, ReasoningEffort } from "./types.js";
 import type { ToolRegistry } from "../registry.js";
+import { resolveModelSelection } from "../models.js";
 import { safeJsonParse } from "./util.js";
 import { chatContentToText, imageBase64, imageMime, normalizeChatContent } from "./content.js";
 
@@ -22,6 +23,7 @@ const THINKING_BUDGET: Record<ReasoningEffort, number> = {
   medium: 6144,
   high: 12288,
   xhigh: 24576,
+  max: 49152,
 };
 /** Output headroom reserved for the answer on top of the thinking budget. */
 const ANSWER_HEADROOM = 8192;
@@ -40,14 +42,24 @@ export function createAnthropicAdapter(config?: Partial<AdapterConfig>): AIAdapt
     );
   }
 
-  const model = config?.model ?? "claude-sonnet-4-6";
+  const modelSelection = resolveModelSelection("anthropic", {
+    role: config?.modelRole ?? "expert",
+    model: config?.model,
+    reasoningEffort: config?.reasoningEffort,
+  });
+  const { model } = modelSelection;
   const systemPrompt = config?.systemPrompt ?? "You are a helpful assistant with access to tools. Use tools when they're relevant.";
-  const thinkingBudget = config?.reasoningEffort ? THINKING_BUDGET[config.reasoningEffort] : 0;
-  const thinkingEnabled = thinkingBudget > 0;
+  const reasoningEffort = modelSelection.reasoningEffort;
+  const thinkingBudget = THINKING_BUDGET[reasoningEffort];
+  const adaptiveThinking = supportsAdaptiveThinking(model);
+  const thinkingEnabled = adaptiveThinking
+    ? reasoningEffort !== "none" && reasoningEffort !== "minimal"
+    : thinkingBudget > 0;
 
   return {
     name: config?.name ?? "Claude",
     model,
+    modelSelection,
 
     async chat(messages: ChatMessage[], registry: ToolRegistry, options?: ChatOptions): Promise<AdapterResponse> {
       // Convert messages to Anthropic format
@@ -128,7 +140,14 @@ export function createAnthropicAdapter(config?: Partial<AdapterConfig>): AIAdapt
         tools,
       };
 
-      if (thinkingEnabled) {
+      if (adaptiveThinking) {
+        if (thinkingEnabled) {
+          body.thinking = { type: "adaptive" };
+          body.output_config = { effort: reasoningEffort };
+        } else {
+          body.thinking = { type: "disabled" };
+        }
+      } else if (thinkingEnabled) {
         body.thinking = { type: "enabled", budget_tokens: thinkingBudget };
       }
 
@@ -206,6 +225,10 @@ export function createAnthropicAdapter(config?: Partial<AdapterConfig>): AIAdapt
       return { text: textBlock?.text ?? "(no response)" };
     },
   };
+}
+
+function supportsAdaptiveThinking(model: string): boolean {
+  return /claude-(?:fable-5|sonnet-5|opus-5|opus-4-[678]|sonnet-4-6)/u.test(model);
 }
 
 function anthropicContent(content: ChatMessage["content"]): unknown {

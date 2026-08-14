@@ -259,18 +259,18 @@ Establece una clave API en `.env` y el bucle de chat detectará automáticamente
 
 | Proveedor | Modelo por Defecto | API |
 |----------|---------------|-----|
-| Gemini | `gemini-3-flash-preview` | Llamada a funciones |
-| OpenAI | `gpt-5.4` | API de respuestas |
-| Anthropic | `claude-sonnet-4-6` | Mensajes + uso de herramientas |
-| xAI | `grok-4.20-0309-reasoning` | API de respuestas |
-| OpenRouter | `google/gemini-3-flash-preview` | Compatible con OpenAI |
+| Gemini | `gemini-3.7-flash` | Llamada a funciones |
+| OpenAI | `gpt-5.6-terra` | API de respuestas |
+| Anthropic | `claude-sonnet-5` | Mensajes + uso de herramientas |
+| xAI | `grok-4.5` | API de respuestas |
+| OpenRouter | `google/gemini-3.7-flash` | Compatible con OpenAI |
 
 Ejemplos:
 
 ```bash
 npm run chat
 npm run chat -- gemini
-npm run chat -- openai gpt-5.4-pro
+npm run chat -- openai gpt-5.6-terra
 npm run chat -- gemini --prompt study-buddy
 ```
 

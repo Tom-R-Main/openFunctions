@@ -259,18 +259,18 @@ Ustaw jeden klucz API w `.env`, a pętla czatu automatycznie wykryje dostawcę.
 
 | Dostawca | Domyślny model | API |
 |----------|---------------|-----|
-| Gemini | `gemini-3-flash-preview` | Wywoływanie funkcji |
-| OpenAI | `gpt-5.4` | Responses API |
-| Anthropic | `claude-sonnet-4-6` | Wiadomości + użycie narzędzi |
-| xAI | `grok-4.20-0309-reasoning` | Responses API |
-| OpenRouter | `google/gemini-3-flash-preview` | Kompatybilne z OpenAI |
+| Gemini | `gemini-3.7-flash` | Wywoływanie funkcji |
+| OpenAI | `gpt-5.6-terra` | Responses API |
+| Anthropic | `claude-sonnet-5` | Wiadomości + użycie narzędzi |
+| xAI | `grok-4.5` | Responses API |
+| OpenRouter | `google/gemini-3.7-flash` | Kompatybilne z OpenAI |
 
 Przykłady:
 
 ```bash
 npm run chat
 npm run chat -- gemini
-npm run chat -- openai gpt-5.4-pro
+npm run chat -- openai gpt-5.6-terra
 npm run chat -- gemini --prompt study-buddy
 ```
 

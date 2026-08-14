@@ -68,6 +68,7 @@ export type {
   AgentDefinition,
   Agent,
   AgentResult,
+  AgentRunOptions,
   CrewOptions,
   CrewResult,
   RalphOptions,
@@ -79,6 +80,58 @@ export type {
   TaskCrewOptions,
   TaskCrewResult,
 } from "./agents.js";
+
+// Role-based model policy
+export {
+  MODEL_POLICY_VERSION,
+  MODEL_ROLES,
+  MODEL_PROVIDERS,
+  PROVIDER_MODEL_DEFAULTS,
+  normalizeModelProvider,
+  resolveModelSelection,
+  customAdapterSelection,
+} from "./models.js";
+export type {
+  ModelRole,
+  ModelProvider,
+  ModelDefault,
+  ModelSelection,
+  ResolveModelSelectionOptions,
+} from "./models.js";
+
+// Legible execution records
+export {
+  RUN_SCHEMA_VERSION,
+  RunExecutionError,
+  digestValue,
+  createCapabilitySnapshot,
+  createRunManifest,
+  completeRun,
+  failRun,
+  cancelRun,
+  createOutcomeClaim,
+  evaluateAssurance,
+  decideFulfillment,
+} from "./runs.js";
+export type {
+  RunStatus,
+  CapabilitySnapshotEntry,
+  CapabilitySnapshot,
+  RunEnvironmentRef,
+  RunManifest,
+  RunFailure,
+  RunRecord,
+  OutcomeClaim,
+  VerificationMethod,
+  VerificationMethodKind,
+  VerificationAttempt,
+  AssurancePolicy,
+  AssuranceBundle,
+  FulfillmentDecision,
+  GoalTransition,
+  RunContext,
+  CreateRunManifestInput,
+} from "./runs.js";
 
 // Context Providers
 export { connectProvider, contextPrompt, checkProviderHealth } from "./context.js";
@@ -126,4 +179,7 @@ export type {
   GeminiFunctionDeclaration,
   AnthropicTool,
   OpenAIFunction,
+  CommitmentClass,
+  IdempotencyBehavior,
+  CapabilityContract,
 } from "./types.js";

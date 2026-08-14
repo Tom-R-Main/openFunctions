@@ -2,11 +2,12 @@
  * Gemini Adapter (Google AI Studio)
  *
  * Env: GEMINI_API_KEY (free at https://aistudio.google.com/apikey)
- * Default model: gemini-3-flash-preview
+ * Default role: instant (currently gemini-3.7-flash)
  */
 
 import type { AIAdapter, AdapterConfig, ChatMessage, ChatOptions, AdapterResponse } from "./types.js";
 import type { ToolRegistry } from "../registry.js";
+import { resolveModelSelection } from "../models.js";
 import { safeJsonParse } from "./util.js";
 import { chatContentToText, imageBase64, imageMime, normalizeChatContent } from "./content.js";
 
@@ -18,13 +19,19 @@ export function createGeminiAdapter(config?: Partial<AdapterConfig>): AIAdapter 
     );
   }
 
-  const model = config?.model ?? process.env.GEMINI_MODEL ?? "gemini-3-flash-preview";
+  const modelSelection = resolveModelSelection("gemini", {
+    role: config?.modelRole ?? "instant",
+    model: config?.model ?? process.env.GEMINI_MODEL,
+    reasoningEffort: config?.reasoningEffort,
+  });
+  const { model, reasoningEffort } = modelSelection;
   const systemPrompt = config?.systemPrompt ?? "You are a helpful assistant with access to tools. Use tools when they're relevant.";
   const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
 
   return {
     name: config?.name ?? "Gemini",
     model,
+    modelSelection,
 
     async chat(messages: ChatMessage[], registry: ToolRegistry, options?: ChatOptions): Promise<AdapterResponse> {
       const contents: any[] = [];
@@ -35,6 +42,7 @@ export function createGeminiAdapter(config?: Partial<AdapterConfig>): AIAdapter 
           // open one rather than emitting consecutive function messages.
           const fr = {
             functionResponse: {
+              id: msg.toolCallId!,
               name: msg.toolName!,
               response: safeJsonParse(chatContentToText(msg.content), { result: chatContentToText(msg.content) }),
             },
@@ -50,9 +58,22 @@ export function createGeminiAdapter(config?: Partial<AdapterConfig>): AIAdapter 
           const calls = msg.toolCalls?.length
             ? msg.toolCalls
             : [{ id: msg.toolCallId!, name: msg.toolName!, args: safeJsonParse(chatContentToText(msg.content), {}) as Record<string, unknown> }];
+          const preserved = Array.isArray(msg.thinkingBlocks)
+            ? msg.thinkingBlocks
+            : [];
+          const canReplayPreservedCalls =
+            preserved.length === calls.length &&
+            preserved.every((part: any, index) =>
+              part?.functionCall?.name === calls[index].name &&
+              (part.functionCall.id ?? calls[index].id) === calls[index].id
+            );
           contents.push({
             role: "model",
-            parts: calls.map((c) => ({ functionCall: { name: c.name, args: c.args } })),
+            parts: canReplayPreservedCalls
+              ? preserved
+              : calls.map((c) => ({
+                  functionCall: { id: c.id, name: c.name, args: c.args },
+                })),
           });
           continue;
         }
@@ -71,7 +92,11 @@ export function createGeminiAdapter(config?: Partial<AdapterConfig>): AIAdapter 
         tools: [{ functionDeclarations: registry.toGeminiFormat() }],
         // maxOutputTokens omitted on purpose: Gemini counts thinking tokens
         // against it, so a low cap truncates reasoning models before they answer.
-        generationConfig: { temperature: 0.7 },
+        generationConfig: {
+          thinkingConfig: {
+            thinkingLevel: geminiThinkingLevel(reasoningEffort),
+          },
+        },
         systemInstruction: {
           parts: [{ text: options?.systemPrompt ?? systemPrompt }],
         },
@@ -112,18 +137,27 @@ export function createGeminiAdapter(config?: Partial<AdapterConfig>): AIAdapter 
           .trim() ?? "";
       // Gemini can emit several functionCall parts in one turn (parallel
       // function calling). Match results back by name (Gemini's contract).
-      const fnCalls = (candidate.parts ?? [])
-        .filter((p: any) => p.functionCall)
-        .map((p: any, i: number) => ({
-          id: p.functionCall.id ?? `gemini-${i}`,
-          name: p.functionCall.name,
-          args: p.functionCall.args ?? {},
-        }));
+      const functionCallParts = (candidate.parts ?? [])
+        .filter((p: any) => p.functionCall);
+      const fnCalls = functionCallParts.map((p: any, i: number) => ({
+        id: p.functionCall.id ?? `gemini-${i}`,
+        name: p.functionCall.name,
+        args: p.functionCall.args ?? {},
+      }));
 
-      if (fnCalls.length === 1) return { toolCall: fnCalls[0], ...(textParts && { text: textParts }) };
-      if (fnCalls.length > 1) return { toolCalls: fnCalls, ...(textParts && { text: textParts }) };
+      const thinking = functionCallParts.length ? functionCallParts : undefined;
+      if (fnCalls.length === 1) return { toolCall: fnCalls[0], ...(thinking && { thinking }), ...(textParts && { text: textParts }) };
+      if (fnCalls.length > 1) return { toolCalls: fnCalls, ...(thinking && { thinking }), ...(textParts && { text: textParts }) };
 
       return { text: textParts || "(no response)" };
     },
   };
+}
+
+function geminiThinkingLevel(
+  effort: import("./types.js").ReasoningEffort,
+): "minimal" | "low" | "medium" | "high" {
+  if (effort === "none" || effort === "minimal") return "minimal";
+  if (effort === "xhigh" || effort === "max") return "high";
+  return effort;
 }

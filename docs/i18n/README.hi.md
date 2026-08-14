@@ -259,18 +259,18 @@ npm start                   # Claude Desktop / Cursor के लिए MCP स�
 
 | प्रदाता | डिफ़ॉल्ट मॉडल | API |
 |----------|---------------|-----|
-| Gemini | `gemini-3-flash-preview` | फ़ंक्शन कॉलिंग |
-| OpenAI | `gpt-5.4` | रिस्पॉन्स API |
-| Anthropic | `claude-sonnet-4-6` | मैसेज + tool_use |
-| xAI | `grok-4.20-0309-reasoning` | रिस्पॉन्स API |
-| OpenRouter | `google/gemini-3-flash-preview` | OpenAI-संगत |
+| Gemini | `gemini-3.7-flash` | फ़ंक्शन कॉलिंग |
+| OpenAI | `gpt-5.6-terra` | रिस्पॉन्स API |
+| Anthropic | `claude-sonnet-5` | मैसेज + tool_use |
+| xAI | `grok-4.5` | रिस्पॉन्स API |
+| OpenRouter | `google/gemini-3.7-flash` | OpenAI-संगत |
 
 उदाहरण:
 
 ```bash
 npm run chat
 npm run chat -- gemini
-npm run chat -- openai gpt-5.4-pro
+npm run chat -- openai gpt-5.6-terra
 npm run chat -- gemini --prompt study-buddy
 ```
 

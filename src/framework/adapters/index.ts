@@ -10,7 +10,13 @@
  *   npm run chat -- openrouter# OpenRouter (any model)
  */
 
-export type { AIAdapter, AdapterConfig, ChatMessage, AdapterResponse } from "./types.js";
+export type {
+  AIAdapter,
+  AdapterConfig,
+  ChatMessage,
+  AdapterResponse,
+  ReasoningEffort,
+} from "./types.js";
 export { createGeminiAdapter } from "./gemini.js";
 export { createOpenAIAdapter, createOpenRouterAdapter } from "./openai.js";
 export { createAnthropicAdapter } from "./anthropic.js";

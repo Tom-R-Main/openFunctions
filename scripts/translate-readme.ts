@@ -42,7 +42,7 @@ const LOCALES: Record<string, string> = {
   "zh-TW": "Traditional Chinese",
 };
 
-const MODEL = "gemini-2.5-flash";
+const MODEL = "gemini-3.7-flash";
 
 async function translateReadme(
   readmeContent: string,

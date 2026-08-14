@@ -259,18 +259,18 @@ npm start                   # 啟動 MCP 伺服器以供 Claude Desktop / Cursor
 
 | 供應商 | 預設模型 | API |
 |----------|---------------|-----|
-| Gemini | `gemini-3-flash-preview` | Function calling |
-| OpenAI | `gpt-5.4` | Responses API |
-| Anthropic | `claude-sonnet-4-6` | Messages + tool_use |
-| xAI | `grok-4.20-0309-reasoning` | Responses API |
-| OpenRouter | `google/gemini-3-flash-preview` | OpenAI-compatible |
+| Gemini | `gemini-3.7-flash` | Function calling |
+| OpenAI | `gpt-5.6-terra` | Responses API |
+| Anthropic | `claude-sonnet-5` | Messages + tool_use |
+| xAI | `grok-4.5` | Responses API |
+| OpenRouter | `google/gemini-3.7-flash` | OpenAI-compatible |
 
 範例：
 
 ```bash
 npm run chat
 npm run chat -- gemini
-npm run chat -- openai gpt-5.4-pro
+npm run chat -- openai gpt-5.6-terra
 npm run chat -- gemini --prompt study-buddy
 ```
 

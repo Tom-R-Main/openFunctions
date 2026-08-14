@@ -12,6 +12,8 @@ import type { ContextProvider } from "./context.js";
 import type { PromptOptions } from "./prompts.js";
 import type { AIAdapter, ChatContent, ChatMessage, ReasoningEffort } from "./adapters/types.js";
 import type { Store } from "./store.js";
+import type { ModelRole } from "./models.js";
+import type { OutcomeClaim, RunContext, RunRecord } from "./runs.js";
 
 // ─── Memory Config ─────────────────────────────────────────────────────────
 
@@ -58,8 +60,11 @@ export interface ChatAgentConfig {
   /** AI provider: "gemini", "openai", "anthropic", "xai", "openrouter" */
   provider?: string;
 
-  /** Model override (e.g., "gemini-2.5-flash", "gpt-5.5", "gpt-5.5-2026-04-23") */
+  /** Model override. Prefer modelRole when a stable workload class is enough. */
   model?: string;
+
+  /** Stable workload class resolved through the dated model policy. */
+  modelRole?: ModelRole;
 
   /**
    * Reasoning effort for models that support it. Forwarded to the adapter,
@@ -119,6 +124,12 @@ export interface ChatResult {
   /** Number of LLM rounds consumed */
   rounds: number;
 
+  /** Immutable record of this execution attempt. */
+  run: RunRecord;
+
+  /** What the run claims it produced. Absent for failed or limited runs. */
+  outcome?: OutcomeClaim;
+
   /** Metadata about the turn */
   metadata: {
     provider: string;
@@ -155,6 +166,9 @@ export interface ChatAgentChatOptions {
 
   /** Override thread ID for this turn */
   threadId?: string;
+
+  /** Optional IDs and grants that bind this turn to a larger task graph. */
+  run?: RunContext;
 }
 
 // ─── Serve Options ─────────────────────────────────────────────────────────

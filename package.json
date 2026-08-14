@@ -22,24 +22,36 @@
   "scripts": {
     "start": "tsx src/index.ts",
     "dev": "tsx watch src/index.ts",
+    "build": "tsc",
+    "build:ts6": "tsc6",
+    "typecheck": "tsc --noEmit",
+    "typecheck:ts6": "tsc6 --noEmit",
+    "verify:typescript": "node scripts/verify-typescript-toolchain.mjs && node scripts/verify-typescript-parity.mjs",
     "test-tools": "tsx test-client/cli.ts",
     "chat": "tsx scripts/chat.ts",
     "gemini": "tsx scripts/chat.ts gemini",
-    "test": "tsx test-client/run-tests.ts && tsx test-client/run-framework-tests.ts && tsx test-client/run-parallel-tools-tests.ts && tsx test-client/run-siftable-provider-tests.ts",
-    "test:framework": "tsx test-client/run-framework-tests.ts && tsx test-client/run-parallel-tools-tests.ts",
+    "test": "tsx test-client/run-tests.ts && tsx test-client/run-framework-tests.ts && tsx test-client/run-parallel-tools-tests.ts && tsx test-client/run-legible-execution-tests.ts && tsx test-client/run-siftable-provider-tests.ts",
+    "test:framework": "tsx test-client/run-framework-tests.ts && tsx test-client/run-parallel-tools-tests.ts && tsx test-client/run-legible-execution-tests.ts",
     "create-tool": "tsx scripts/create-tool.ts",
     "docs": "tsx scripts/generate-docs.ts",
     "inspect": "npx @modelcontextprotocol/inspector tsx src/index.ts"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.30.0",
-    "@siftable/mcp-server": "^1.2.17",
+    "@siftable/mcp-server": "^1.2.27",
     "pg": "^8.22.0"
   },
   "devDependencies": {
+    "@typescript/native": "npm:typescript@7.0.2",
     "@types/node": "^22.0.0",
     "@types/pg": "^8.20.0",
-    "tsx": "^4.19.0",
-    "typescript": "^5.6.0"
+    "tsx": "^4.23.12",
+    "typescript": "npm:@typescript/typescript6@6.0.2"
+  },
+  "overrides": {
+    "@typescript/old": "npm:typescript@6.0.3",
+    "@siftable/mcp-server": {
+      "zod": "3.25.76"
+    }
   }
 }
