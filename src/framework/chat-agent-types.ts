@@ -14,6 +14,7 @@ import type { AIAdapter, ChatContent, ChatMessage, ReasoningEffort } from "./ada
 import type { Store } from "./store.js";
 import type { ModelRole } from "./models.js";
 import type { OutcomeClaim, RunContext, RunRecord } from "./runs.js";
+import type { SessionEvent, SessionEventStore } from "./session.js";
 
 // ─── Memory Config ─────────────────────────────────────────────────────────
 
@@ -24,7 +25,10 @@ export interface MemoryConfig {
   facts?: boolean;
   /** Thread ID for conversation persistence (auto-generated if omitted) */
   threadId?: string;
-  /** Custom store for conversation threads */
+  /**
+   * Custom store for conversation threads. Durable session projection requires
+   * an implementation of Store.mutate() with atomic read-check-write behavior.
+   */
   conversationStore?: Store<any>;
   /** Custom store for facts */
   factStore?: Store<any>;
@@ -43,6 +47,30 @@ export interface PeerConfig {
   endpoint?: string;
   /** Task status trigger (Routa-style state-driven orchestration) */
   trigger?: { taskStatus?: string };
+}
+
+// ─── Session Config ────────────────────────────────────────────────────────
+
+/**
+ * Event-journal configuration for a chat agent. The journal is always the
+ * in-process source of truth for model history; callers can provide a durable
+ * store and stable id when the session must survive process restarts.
+ */
+export interface ChatSessionConfig {
+  /** Stable journal id. A new UUID is allocated when omitted. */
+  id?: string;
+
+  /** Explicit logical thread identity for durable reopen validation. */
+  threadId?: string;
+
+  /** Optional durable or observable event store. Defaults to in-memory. */
+  store?: SessionEventStore;
+
+  /**
+   * Balance an interrupted prior turn when reopening an existing journal.
+   * Recovery never retries a tool whose outcome is uncertain. Default: true.
+   */
+  recoverInterrupted?: boolean;
 }
 
 // ─── Agent Config ──────────────────────────────────────────────────────────
@@ -98,6 +126,9 @@ export interface ChatAgentConfig {
   /** Max tool-calling rounds per turn (default: 10) */
   maxToolRounds?: number;
 
+  /** Event-sourced session journal configuration. */
+  session?: ChatSessionConfig;
+
   /** Skip agent reasoning — plain tool calling only (saves tokens) */
   raw?: boolean;
 
@@ -118,7 +149,12 @@ export interface ChatResult {
   toolCalls: Array<{
     name: string;
     args: Record<string, unknown>;
-    result: { success: boolean; data?: unknown; error?: string };
+    result: {
+      success: boolean;
+      data?: unknown;
+      error?: string;
+      executionOutcome?: "succeeded" | "failed" | "unknown";
+    };
   }>;
 
   /** Number of LLM rounds consumed */
@@ -149,7 +185,13 @@ export interface ChatStreamChunk {
   toolCall?: { name: string; args: Record<string, unknown> };
 
   /** Tool result (for type: "tool_result") */
-  toolResult?: { name: string; success: boolean; data?: unknown; error?: string };
+  toolResult?: {
+    name: string;
+    success: boolean;
+    data?: unknown;
+    error?: string;
+    executionOutcome?: "succeeded" | "failed" | "unknown";
+  };
 
   /** Final result (for type: "done") */
   result?: ChatResult;
@@ -161,6 +203,9 @@ export interface ChatAgentChatOptions {
   /** Enable streaming response (returns AsyncIterable<ChatStreamChunk>) */
   stream?: boolean;
 
+  /** Cancel queued or in-flight harness work at safe execution boundaries. */
+  signal?: AbortSignal;
+
   /** Override system prompt for this turn only */
   systemPrompt?: string;
 
@@ -169,6 +214,22 @@ export interface ChatAgentChatOptions {
 
   /** Optional IDs and grants that bind this turn to a larger task graph. */
   run?: RunContext;
+}
+
+export interface ChatAgentResetOptions {
+  /**
+   * Logical thread identity to retain after clearing history. Durable callers
+   * should pass their stable thread id so the same journal can be reopened.
+   * An agent configured with an explicit session.threadId or memory.threadId
+   * returns to that pinned identity when omitted; ephemeral agents generate a
+   * new id.
+   */
+  threadId?: string;
+}
+
+export interface ExternalMessageOptions {
+  /** Stable, caller-owned id used to make durable inbox delivery idempotent. */
+  id: string;
 }
 
 // ─── Serve Options ─────────────────────────────────────────────────────────
@@ -214,8 +275,24 @@ export interface ChatAgent {
   /** Get current conversation history */
   getHistory(): ChatMessage[];
 
-  /** Clear conversation history and start a new thread */
-  reset(): void;
+  /** Immutable execution journal backing the projected model history. */
+  getSessionEvents(): readonly SessionEvent[];
+
+  /**
+   * Clear conversation history immediately, optionally retaining a stable
+   * logical thread. Throws while another turn or state mutation is active;
+   * use resetAsync() when the operation should wait in the agent's FIFO.
+   */
+  reset(options?: ChatAgentResetOptions): void;
+
+  /** Queue a reset behind active agent work. */
+  resetAsync(options?: ChatAgentResetOptions): Promise<void>;
+
+  /**
+   * Append an externally delivered user message exactly once. Returns false
+   * when the same stable id was already recorded in this journal.
+   */
+  ingestExternalMessage(message: ChatContent, options: ExternalMessageOptions): Promise<boolean>;
 
   /**
    * List all persisted thread IDs known to conversation memory.
@@ -229,6 +306,12 @@ export interface ChatAgent {
    * memory is disabled).
    */
   deleteThread(threadId: string): boolean;
+
+  /** Queue a thread deletion behind active agent work. */
+  deleteThreadAsync(threadId: string): Promise<boolean>;
+
+  /** Release provider resources without making the durable session terminal. */
+  close(): Promise<void>;
 
   /** Shut down — disconnect providers, clean up */
   destroy(): Promise<void>;

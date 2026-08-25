@@ -10,6 +10,99 @@
 
 import type { ToolDefinition, InputSchema, ToolResult } from "./types.js";
 
+export interface NormalizedToolExecution {
+  /** JSON-normalized result shared by receipts, callers, and model history. */
+  result: ToolResult;
+  /** Exact JSON supplied to the model. */
+  modelContent: string;
+  /** Effective executor outcome, including the default derived from success. */
+  outcome: NonNullable<ToolResult["executionOutcome"]>;
+}
+
+function toolExecutionErrorMessage(error: unknown): string {
+  if (error instanceof Error) return error.message;
+  try {
+    return String(error);
+  } catch {
+    return "Unknown tool executor error";
+  }
+}
+
+/**
+ * Convert an executor failure into a model-safe receipt without claiming that
+ * the underlying side effect failed. A rejection may happen after the effect.
+ */
+export function uncertainToolExecution(error: unknown): NormalizedToolExecution {
+  const result: ToolResult = {
+    success: false,
+    error: `Tool execution outcome is unknown: ${toolExecutionErrorMessage(error)}`,
+    executionOutcome: "unknown",
+  };
+  return {
+    result,
+    modelContent: JSON.stringify(result),
+    outcome: "unknown",
+  };
+}
+
+/**
+ * Establish one canonical result at the executor/model boundary. JSON hooks
+ * such as toJSON() are applied exactly once; every downstream decision must
+ * use the normalized value returned here, never the pre-serialization object.
+ */
+export function normalizeToolResult(
+  name: string,
+  result: ToolResult,
+): NormalizedToolExecution {
+  try {
+    const modelContent = JSON.stringify(result);
+    if (modelContent === undefined) {
+      throw new Error(`Tool "${name}" returned a non-serializable result`);
+    }
+    const parsedResult = JSON.parse(modelContent) as unknown;
+    if (
+      parsedResult === null
+      || typeof parsedResult !== "object"
+      || Array.isArray(parsedResult)
+    ) {
+      throw new Error(`Tool "${name}" returned an invalid result`);
+    }
+    const parsedRecord = parsedResult as Record<string, unknown>;
+    if (typeof parsedRecord.success !== "boolean") {
+      throw new Error(`Tool "${name}" returned an invalid result`);
+    }
+    if (
+      parsedRecord.error !== undefined
+      && typeof parsedRecord.error !== "string"
+    ) {
+      throw new Error(`Tool "${name}" returned an invalid result`);
+    }
+    if (
+      parsedRecord.message !== undefined
+      && typeof parsedRecord.message !== "string"
+    ) {
+      throw new Error(`Tool "${name}" returned an invalid result`);
+    }
+    if (
+      parsedRecord.executionOutcome !== undefined
+      && parsedRecord.executionOutcome !== "succeeded"
+      && parsedRecord.executionOutcome !== "failed"
+      && parsedRecord.executionOutcome !== "unknown"
+    ) {
+      throw new Error(`Tool "${name}" returned an invalid result`);
+    }
+    const normalizedResult = parsedResult as ToolResult;
+    return {
+      result: normalizedResult,
+      modelContent,
+      outcome: normalizedResult.executionOutcome
+        ?? (normalizedResult.success ? "succeeded" : "failed"),
+    };
+  } catch (error) {
+    return uncertainToolExecution(error);
+  }
+}
+
 /**
  * Define a new tool that any AI can call.
  *

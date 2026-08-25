@@ -33,10 +33,20 @@
 
 import { randomUUID } from "node:crypto";
 import type { ToolResult, ToolDefinition, InputSchema } from "./types.js";
-import type { AIAdapter, ChatMessage } from "./adapters/types.js";
+import type {
+  AIAdapter,
+  AdapterSessionState,
+  ChatMessage,
+} from "./adapters/types.js";
+import { validatedAdapterToolCalls } from "./adapters/types.js";
 import { ToolRegistry } from "./registry.js";
 import { composePrompt, autoToolGuide } from "./prompts.js";
-import { defineTool, ok } from "./tool.js";
+import {
+  defineTool,
+  normalizeToolResult,
+  ok,
+  uncertainToolExecution,
+} from "./tool.js";
 import { forceStructuredOutput } from "./structured.js";
 import {
   completeRun,
@@ -225,6 +235,34 @@ export interface RalphCrewSummary {
   }>;
 }
 
+function attachAgentToolEffects(
+  run: RunRecord,
+  toolCalls: AgentResult["toolCalls"],
+): RunRecord {
+  if (toolCalls.length === 0) return run;
+
+  const receipts = toolCalls.map((call) => ({
+    name: call.name,
+    args: { ...call.args },
+    result: { ...call.result },
+  }));
+  const certainty = receipts.some(
+    (receipt) => receipt.result.executionOutcome === "unknown",
+  ) ? "unknown" as const : "known" as const;
+
+  return {
+    ...run,
+    toolEffects: {
+      state: "partial",
+      certainty,
+      receipts,
+      ...(certainty === "unknown"
+        ? { verificationRequired: "verify tool side effects before deciding whether any retry is safe" }
+        : {}),
+    },
+  };
+}
+
 // ─── Agent Builder ──────────────────────────────────────────────────────────
 
 /**
@@ -278,6 +316,7 @@ export function defineAgent(definition: AgentDefinition): Agent {
       const toolCalls: AgentResult["toolCalls"] = [];
       const maxRounds = definition.maxRounds ?? 10;
       let rounds = 0;
+      let sessionState: AdapterSessionState | undefined;
       let run = createRunManifest({
         ...options,
         actor: { kind: "agent", name: definition.name },
@@ -301,28 +340,74 @@ export function defineAgent(definition: AgentDefinition): Agent {
               // so we don't thread onto another agent's prior conversation
               // when the same adapter is shared across a crew.
               resetSession: rounds === 1,
+              ...(sessionState === undefined ? {} : { sessionState }),
             },
           );
+          sessionState = response.sessionState;
 
-          if (response.toolCall) {
-            const { id, name, args } = response.toolCall;
+          const calls = validatedAdapterToolCalls(response);
+          if (calls.length > 0) {
+            messages.push(calls.length === 1
+              ? {
+                  role: "assistant",
+                  content: JSON.stringify(calls[0].args),
+                  toolCallId: calls[0].id,
+                  toolName: calls[0].name,
+                  ...(response.thinking && { thinkingBlocks: response.thinking }),
+                  ...(response.providerReplay === undefined
+                    ? {}
+                    : { providerReplay: response.providerReplay }),
+                }
+              : {
+                  role: "assistant",
+                  content: "",
+                  toolCalls: calls,
+                  ...(response.thinking && { thinkingBlocks: response.thinking }),
+                  ...(response.providerReplay === undefined
+                    ? {}
+                    : { providerReplay: response.providerReplay }),
+                });
 
-            messages.push({
-              role: "assistant",
-              content: JSON.stringify(args),
-              toolCallId: id,
-              toolName: name,
-            });
+            // Start every call before awaiting the batch, then wait for every
+            // execution to settle. Promise.all would reject early and let
+            // later side effects finish without ever recording their receipts.
+            const settledResults = await Promise.allSettled(
+              calls.map((call) => agentRegistry.execute(call.name, call.args)),
+            );
 
-            const result = await agentRegistry.execute(name, args);
-            toolCalls.push({ name, args, result });
-
-            messages.push({
-              role: "tool",
-              content: JSON.stringify(result),
-              toolCallId: id,
-              toolName: name,
-            });
+            // Normalize executor rejections and result-serialization failures
+            // independently. Build every receipt in model call order before
+            // any model-history operation can fail, so a bad earlier result
+            // never hides a later call's externally visible effect.
+            const executions = settledResults.map((settled, index) =>
+              settled.status === "rejected"
+                ? uncertainToolExecution(settled.reason)
+                : normalizeToolResult(calls[index].name, settled.value)
+            );
+            for (let index = 0; index < calls.length; index += 1) {
+              const call = calls[index];
+              const execution = executions[index];
+              toolCalls.push({
+                name: call.name,
+                args: call.args,
+                result: execution.result,
+              });
+            }
+            for (let index = 0; index < calls.length; index += 1) {
+              const call = calls[index];
+              const execution = executions[index];
+              messages.push({
+                role: "tool",
+                content: execution.modelContent,
+                toolCallId: call.id,
+                toolName: call.name,
+              });
+            }
+            if (executions.some(
+              (execution) => execution.outcome === "unknown",
+            )) {
+              throw new Error("Tool execution outcome is unknown; verify side effects before retrying");
+            }
             continue;
           }
 
@@ -341,6 +426,7 @@ export function defineAgent(definition: AgentDefinition): Agent {
           `⚠️  agent "${definition.name}" hit maxRounds (${maxRounds}) without a final response`,
         );
         run = completeRun(run, { limitReached: true });
+        run = attachAgentToolEffects(run, toolCalls);
         return {
           output: "(agent exceeded max rounds)",
           toolCalls,
@@ -351,6 +437,7 @@ export function defineAgent(definition: AgentDefinition): Agent {
       } catch (error) {
         if (error instanceof RunExecutionError) throw error;
         run = failRun(run, error);
+        run = attachAgentToolEffects(run, toolCalls);
         throw new RunExecutionError(
           `Agent "${definition.name}" failed: ${error instanceof Error ? error.message : String(error)}`,
           run,

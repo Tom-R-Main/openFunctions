@@ -6,8 +6,10 @@
  */
 
 import * as readline from "node:readline";
-import type { AIAdapter, ChatMessage } from "./types.js";
+import type { AIAdapter, AdapterSessionState, ChatMessage } from "./types.js";
+import { validatedAdapterToolCalls } from "./types.js";
 import type { ToolRegistry } from "../registry.js";
+import { normalizeToolResult, uncertainToolExecution } from "../tool.js";
 
 /**
  * Start an interactive chat session with the given adapter.
@@ -57,7 +59,14 @@ export async function startChat(
       try {
         await runConversationTurn(adapter, registry, history);
       } catch (err) {
-        history.length = historyLengthBefore;
+        // Once a tool receipt exists, the turn is part of the durable model
+        // context even when execution certainty is unknown or a later adapter
+        // call fails. Keep the call/result pair so the next user turn can see
+        // what already happened; only roll back failures with no tool receipt.
+        const hasToolReceipt = history
+          .slice(historyLengthBefore)
+          .some((message) => message.role === "tool");
+        if (!hasToolReceipt) history.length = historyLengthBefore;
         console.error(
           `\n  Error: ${err instanceof Error ? err.message : err}\n`
         );
@@ -79,35 +88,65 @@ async function runConversationTurn(
   history: ChatMessage[],
 ): Promise<void> {
   let maxRounds = 10;
+  let sessionState: AdapterSessionState | undefined;
 
   while (maxRounds-- > 0) {
-    const response = await adapter.chat(history, registry);
+    const response = await adapter.chat(
+      history,
+      registry,
+      sessionState === undefined ? undefined : { sessionState },
+    );
+    sessionState = response.sessionState;
 
-    // If the AI wants to call a tool
-    if (response.toolCall) {
-      const { id, name, args } = response.toolCall;
-      console.log(`\n  [Tool Call] ${name}(${JSON.stringify(args)})`);
+    const calls = validatedAdapterToolCalls(response);
+    if (calls.length > 0) {
+      for (const call of calls) {
+        console.log(`\n  [Tool Call] ${call.name}(${JSON.stringify(call.args)})`);
+      }
+      history.push(calls.length === 1
+        ? {
+            role: "assistant",
+            content: JSON.stringify(calls[0].args),
+            toolCallId: calls[0].id,
+            toolName: calls[0].name,
+            ...(response.thinking && { thinkingBlocks: response.thinking }),
+            ...(response.providerReplay === undefined
+              ? {}
+              : { providerReplay: response.providerReplay }),
+          }
+        : {
+            role: "assistant",
+            content: "",
+            toolCalls: calls,
+            ...(response.thinking && { thinkingBlocks: response.thinking }),
+            ...(response.providerReplay === undefined
+              ? {}
+              : { providerReplay: response.providerReplay }),
+          });
 
-      // Track the assistant's tool call request in history
-      history.push({
-        role: "assistant",
-        content: JSON.stringify(args),
-        toolCallId: id,
-        toolName: name,
-      });
-
-      // Execute the tool
-      const result = await registry.execute(name, args);
-      const resultStr = JSON.stringify(result);
-      console.log(`  [Result]   ${JSON.stringify(result.data ?? result.error)}`);
-
-      // Send result back
-      history.push({
-        role: "tool",
-        content: resultStr,
-        toolCallId: id,
-        toolName: name,
-      });
+      const settledResults = await Promise.allSettled(
+        calls.map((call) => registry.execute(call.name, call.args)),
+      );
+      const executions = settledResults.map((settled, index) =>
+        settled.status === "rejected"
+          ? uncertainToolExecution(settled.reason)
+          : normalizeToolResult(calls[index].name, settled.value)
+      );
+      for (let index = 0; index < calls.length; index += 1) {
+        const call = calls[index];
+        const execution = executions[index];
+        const result = execution.result;
+        console.log(`  [Result]   ${JSON.stringify(result.data ?? result.error)}`);
+        history.push({
+          role: "tool",
+          content: execution.modelContent,
+          toolCallId: call.id,
+          toolName: call.name,
+        });
+      }
+      if (executions.some((execution) => execution.outcome === "unknown")) {
+        throw new Error("Tool execution outcome is unknown; verify side effects before retrying");
+      }
 
       // Continue — the AI may call another tool or respond with text
       continue;
@@ -115,7 +154,13 @@ async function runConversationTurn(
 
     // Text response — we're done
     if (response.text) {
-      history.push({ role: "assistant", content: response.text });
+      history.push({
+        role: "assistant",
+        content: response.text,
+        ...(response.providerReplay === undefined
+          ? {}
+          : { providerReplay: response.providerReplay }),
+      });
       console.log(`\n${adapter.name}: ${response.text}\n`);
     }
 

@@ -190,26 +190,33 @@ export async function connectProvider(
   const { id, name } = provider.metadata;
 
   const connected = await provider.connect(config);
+  const before = new Set(registry.listNames());
+  try {
+    const tools = connected.createTools();
+    const taggedTools = tools.map((tool) => ({
+      ...tool,
+      tags: dedupTags([
+        ...(tool.tags ?? []),
+        "context",
+        `context:${id}`,
+      ]),
+    }));
 
-  const tools = connected.createTools();
-  const taggedTools = tools.map((tool) => ({
-    ...tool,
-    tags: dedupTags([
-      ...(tool.tags ?? []),
-      "context",
-      `context:${id}`,
-    ]),
-  }));
+    // User tools win on name collision — provider tools should not silently
+    // shadow them. Skip and warn instead of overwrite.
+    registry.registerAll(taggedTools, { overwrite: false });
 
-  // User tools win on name collision — provider tools should not silently
-  // shadow them. Skip and warn instead of overwrite.
-  registry.registerAll(taggedTools, { overwrite: false });
-
-  console.log(
-    `🔗 ${name}: connected (${taggedTools.length} tool${taggedTools.length === 1 ? "" : "s"} registered)`,
-  );
-
-  return connected;
+    console.log(
+      `🔗 ${name}: connected (${taggedTools.length} tool${taggedTools.length === 1 ? "" : "s"} registered)`,
+    );
+    return connected;
+  } catch (error) {
+    for (const registeredName of registry.listNames()) {
+      if (!before.has(registeredName)) registry.unregister(registeredName);
+    }
+    await connected.disconnect?.().catch(() => undefined);
+    throw error;
+  }
 }
 
 // ─── Context Prompt Builder ─────────────────────────────────────────────────

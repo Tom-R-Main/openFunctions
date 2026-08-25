@@ -30,7 +30,7 @@ export { defineTool, ok, err } from "./tool.js";
 
 // Persistent store
 export { createStore } from "./store.js";
-export type { Store } from "./store.js";
+export type { Store, StoreMutation } from "./store.js";
 
 // Postgres store (optional — requires DATABASE_URL)
 export { createPgStore, closePgPool } from "./pg-store.js";
@@ -52,7 +52,13 @@ export type { StructuredOutputOptions, StructuredResult } from "./structured.js"
 
 // Memory
 export { createConversationMemory, createFactMemory, createMemoryTools } from "./memory.js";
-export type { Thread, Fact, ConversationMemory, FactMemory } from "./memory.js";
+export type {
+  Thread,
+  Fact,
+  ConversationMemory,
+  JournalConversationMemory,
+  FactMemory,
+} from "./memory.js";
 
 // Workflows
 export { pipe, toolStep, llmStep } from "./workflows.js";
@@ -120,6 +126,8 @@ export type {
   RunEnvironmentRef,
   RunManifest,
   RunFailure,
+  RunToolEffectReceipt,
+  RunToolEffects,
   RunRecord,
   OutcomeClaim,
   VerificationMethod,
@@ -147,14 +155,54 @@ export { createChatAgent } from "./chat-agent.js";
 export type {
   ChatAgent,
   ChatAgentConfig,
+  ChatSessionConfig,
   ChatResult,
   ChatStreamChunk,
   ChatAgentChatOptions,
+  ChatAgentResetOptions,
+  ExternalMessageOptions,
   ServeOptions,
   MemoryConfig,
   PeerConfig,
 } from "./chat-agent-types.js";
-export type { ChatContent, ContentPart, TextContentPart, ImageContentPart } from "./adapters/types.js";
+export type {
+  AdapterSessionState,
+  ChatContent,
+  ContentPart,
+  TextContentPart,
+  ImageContentPart,
+} from "./adapters/types.js";
+
+// Event-sourced session kernel
+export {
+  SESSION_EVENT_SCHEMA_VERSION,
+  InMemorySessionEventStore,
+  JsonlSessionEventStore,
+  SessionConcurrencyError,
+  SessionInvariantError,
+  SessionKernel,
+  digestJson,
+  snapshotJson,
+} from "./session.js";
+export type {
+  JsonObject,
+  JsonValue,
+  JsonlSessionEventStoreOptions,
+  ModelHistoryReference,
+  ModelRequestSnapshot,
+  ModelResponseSnapshot,
+  ModelToolSnapshotReference,
+  SessionKernelOptions,
+  SessionEvent,
+  SessionEventContext,
+  SessionEventDataMap,
+  SessionEventInput,
+  SessionEventOf,
+  SessionEventStore,
+  SessionEventType,
+  StepOutcome,
+  ToolResultOutcome,
+} from "./session.js";
 
 // Test runner
 export { runTests } from "./test-runner.js";

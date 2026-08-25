@@ -110,14 +110,17 @@ export class ToolRegistry {
     if (validationErrors.length > 0) {
       const message = formatValidationErrors(name, validationErrors);
       console.error(`\n⚠️  ${message}\n`);
-      return { success: false, error: message };
+      return { success: false, error: message, executionOutcome: "failed" };
     }
 
     const start = Date.now();
     try {
       const result = await tool.handler(params);
       const duration = Date.now() - start;
-      console.log(`✅ ${name} completed in ${duration}ms`);
+      // The handler returning is not proof that its declared result survived
+      // the model/journal serialization boundary. Keep this executor log
+      // factual; the harness records the canonical outcome after normalization.
+      console.log(`↩️  ${name} returned in ${duration}ms`);
       return result;
     } catch (error) {
       const duration = Date.now() - start;
@@ -127,9 +130,10 @@ export class ToolRegistry {
         error instanceof Error ? error.stack?.split("\n")[1]?.trim() : "";
 
       // ── Rich error output ──────────────────────────────────────────────
-      console.error(`\n❌ ${name} failed after ${duration}ms`);
+      console.error(`\n❓ ${name} threw after ${duration}ms; outcome is unknown`);
       console.error(`   Error: ${message}`);
-      console.error(`   Input: ${JSON.stringify(params)}`);
+      // Tool inputs may contain credentials or personal data. Log shape only.
+      console.error(`   Input keys: ${Object.keys(params).sort().join(", ") || "(none)"}`);
       if (stack) {
         console.error(`   At:    ${stack}`);
       }
@@ -159,7 +163,7 @@ export class ToolRegistry {
       }
       console.error();
 
-      return { success: false, error: message };
+      return { success: false, error: message, executionOutcome: "unknown" };
     }
   }
 

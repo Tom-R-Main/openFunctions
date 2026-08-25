@@ -90,6 +90,24 @@ export interface RunFailure {
   message: string;
 }
 
+export interface RunToolEffectReceipt {
+  name: string;
+  args: Record<string, unknown>;
+  result: {
+    success: boolean;
+    data?: unknown;
+    error?: string;
+    executionOutcome?: "succeeded" | "failed" | "unknown";
+  };
+}
+
+export interface RunToolEffects {
+  state: "partial";
+  certainty: "known" | "unknown";
+  receipts: RunToolEffectReceipt[];
+  verificationRequired?: string;
+}
+
 export interface RunRecord {
   manifest: RunManifest;
   status: RunStatus;
@@ -97,6 +115,7 @@ export interface RunRecord {
   completedAt?: string;
   stopReason?: "model_response" | "max_rounds" | "error" | "cancelled";
   error?: RunFailure;
+  toolEffects?: RunToolEffects;
   cancellation?: {
     effects: "none" | "partial" | "committed";
     reason: string;
@@ -217,11 +236,13 @@ export interface CreateRunManifestInput extends RunContext {
 /** Error with the failed run attached, while preserving ordinary throw flow. */
 export class RunExecutionError extends Error {
   readonly run: RunRecord;
+  readonly toolEffects?: RunToolEffects;
 
   constructor(message: string, run: RunRecord, options?: ErrorOptions) {
     super(message, options);
     this.name = "RunExecutionError";
     this.run = run;
+    this.toolEffects = run.toolEffects;
   }
 }
 

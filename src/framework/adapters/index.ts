@@ -13,10 +13,16 @@
 export type {
   AIAdapter,
   AdapterConfig,
+  AdapterContinuationRecovery,
+  AdapterReplayPayload,
+  AdapterSessionState,
+  ChatOptions,
   ChatMessage,
   AdapterResponse,
   ReasoningEffort,
+  ToolCall,
 } from "./types.js";
+export { validatedAdapterToolCalls } from "./types.js";
 export { createGeminiAdapter } from "./gemini.js";
 export { createOpenAIAdapter, createOpenRouterAdapter } from "./openai.js";
 export { createAnthropicAdapter } from "./anthropic.js";

@@ -6,7 +6,8 @@
  * 1. Conversation Memory — stores message threads by ID
  * 2. Fact Memory — stores extracted facts across sessions
  *
- * Both default to JSON file persistence. Pass createPgStore() for Postgres.
+ * Both default to JSON file persistence. Legacy stores without atomic mutate()
+ * remain usable in one writer, but cannot back a durable session projection.
  *
  * @example
  * ```ts
@@ -21,7 +22,7 @@
 import { randomUUID } from "node:crypto";
 import type { ChatMessage } from "./adapters/types.js";
 import type { ToolDefinition } from "./types.js";
-import type { Store } from "./store.js";
+import type { Store, StoreMutation } from "./store.js";
 import { createStore } from "./store.js";
 import { defineTool, ok, err } from "./tool.js";
 
@@ -46,10 +47,23 @@ export interface Fact {
 export interface ConversationMemory {
   getThread(threadId: string): Thread;
   addMessage(threadId: string, message: ChatMessage): void;
+  /** Optional batch extension implemented by journal-aware memory stores. */
+  addMessages?(threadId: string, messages: ChatMessage[]): void;
+  /** Optional projection extension implemented by journal-aware memory stores. */
+  replaceMessages?(threadId: string, messages: ChatMessage[]): void;
   getRecent(threadId: string, count: number): ChatMessage[];
   listThreads(): string[];
   deleteThread(threadId: string): boolean;
   clear(): void;
+}
+
+export interface JournalConversationMemory extends ConversationMemory {
+  /** Whether read-check-write projection updates are atomic across writers. */
+  readonly atomicMutations: boolean;
+  /** Persist one completed turn with a single backing-store write. */
+  addMessages(threadId: string, messages: ChatMessage[]): void;
+  /** Replace a thread projection from authoritative journal history in one write. */
+  replaceMessages(threadId: string, messages: ChatMessage[]): void;
 }
 
 export interface FactMemory {
@@ -69,37 +83,136 @@ export interface FactMemory {
  */
 export function createConversationMemory(
   store?: Store<Thread>,
-): ConversationMemory {
+): JournalConversationMemory {
   const threads = store ?? createStore<Thread>("threads");
+  const knownSnapshots = new Map<string, string>();
+
+  const remember = (threadId: string, messages: ChatMessage[]): void => {
+    knownSnapshots.set(threadId, JSON.stringify(messages));
+  };
+
+  const mutateThread = <R>(
+    threadId: string,
+    mutation: (current: Thread | undefined) => StoreMutation<Thread, R>,
+  ): R => {
+    if (threads.mutate) return threads.mutate(threadId, mutation);
+
+    // Backward compatibility for custom Store implementations created before
+    // atomic mutation existed. Synchronous in-process stores cannot interleave
+    // between these calls, while createStore() takes the atomic path above.
+    const outcome = mutation(threads.get(threadId));
+    switch (outcome.action) {
+      case "set":
+        threads.set(threadId, outcome.value);
+        break;
+      case "delete":
+        threads.delete(threadId);
+        break;
+      case "unchanged":
+        break;
+    }
+    return outcome.result;
+  };
 
   return {
-    getThread(threadId: string): Thread {
-      const existing = threads.get(threadId);
-      if (existing) return existing;
+    atomicMutations: threads.mutate !== undefined,
 
-      const thread: Thread = {
-        id: threadId,
-        messages: [],
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
-      };
-      threads.set(threadId, thread);
+    getThread(threadId: string): Thread {
+      const thread = mutateThread(threadId, (existing) => {
+        if (existing) return { action: "unchanged", result: existing };
+        const now = new Date().toISOString();
+        const created: Thread = {
+          id: threadId,
+          messages: [],
+          createdAt: now,
+          updatedAt: now,
+        };
+        return { action: "set", value: created, result: created };
+      });
+      remember(threadId, thread.messages);
       return thread;
     },
 
     addMessage(threadId: string, message: ChatMessage): void {
-      const thread = this.getThread(threadId);
-      const updated = {
-        ...thread,
-        messages: [...thread.messages, message],
-        updatedAt: new Date().toISOString(),
-      };
-      threads.set(threadId, updated);
+      this.addMessages(threadId, [message]);
+    },
+
+    addMessages(threadId: string, messages: ChatMessage[]): void {
+      const now = new Date().toISOString();
+      const updated = mutateThread(threadId, (thread) => {
+        const current = thread ?? {
+          id: threadId,
+          messages: [],
+          createdAt: now,
+          updatedAt: now,
+        };
+        const next = {
+          ...current,
+          messages: [...current.messages, ...messages],
+          updatedAt: now,
+        };
+        return { action: "set", value: next, result: next };
+      });
+      remember(threadId, updated.messages);
+    },
+
+    replaceMessages(threadId: string, messages: ChatMessage[]): void {
+      const now = new Date().toISOString();
+      const desiredSnapshot = JSON.stringify(messages);
+      const knownSnapshot = knownSnapshots.get(threadId);
+      mutateThread(threadId, (thread) => {
+        const currentMessages = thread?.messages ?? [];
+        const currentSnapshot = JSON.stringify(currentMessages);
+        if (currentSnapshot !== knownSnapshot && currentSnapshot !== desiredSnapshot) {
+          // An empty journal projection is an explicit clear, not merely a
+          // prefix of whatever compatibility history happens to be persisted.
+          // A fresh ConversationMemory has no optimistic-concurrency baseline,
+          // so its authoritative clear must replace stale storage. Once this
+          // instance has observed a snapshot, however, reject a concurrent
+          // change rather than erasing another writer's messages.
+          if (knownSnapshot === undefined) {
+            if (messages.length > 0 && isMessagePrefix(messages, currentMessages)) {
+              return { action: "unchanged", result: undefined };
+            }
+            if (messages.length > 0 && !isMessagePrefix(currentMessages, messages)) {
+              throw new Error(`Conversation thread "${threadId}" changed concurrently`);
+            }
+          } else {
+            const knownMessages = JSON.parse(knownSnapshot) as ChatMessage[];
+            if (
+              messages.length === 0
+              || !isMessagePrefix(knownMessages, currentMessages)
+            ) {
+              throw new Error(`Conversation thread "${threadId}" changed concurrently`);
+            }
+            if (isMessagePrefix(messages, currentMessages)) {
+              return { action: "unchanged", result: undefined };
+            }
+            if (!isMessagePrefix(currentMessages, messages)) {
+              throw new Error(`Conversation thread "${threadId}" changed concurrently`);
+            }
+          }
+        }
+        const updated = {
+          ...thread,
+          id: threadId,
+          messages: [...messages],
+          createdAt: thread?.createdAt ?? now,
+          updatedAt: now,
+        };
+        return { action: "set", value: updated, result: undefined };
+      });
+      // Keep the optimistic baseline aligned with the journal projection this
+      // caller supplied. When a longer concurrent extension is preserved,
+      // treating that extension as this writer's baseline would let a repeated
+      // stale projection erase it on the next call.
+      remember(threadId, messages);
     },
 
     getRecent(threadId: string, count: number): ChatMessage[] {
       const thread = threads.get(threadId);
       if (!thread) return [];
+      remember(threadId, thread.messages);
       return thread.messages.slice(-count);
     },
 
@@ -108,13 +221,24 @@ export function createConversationMemory(
     },
 
     deleteThread(threadId: string): boolean {
-      return threads.delete(threadId);
+      const deleted = threads.delete(threadId);
+      if (deleted) knownSnapshots.delete(threadId);
+      return deleted;
     },
 
     clear(): void {
       threads.clear();
+      knownSnapshots.clear();
     },
   };
+}
+
+function isMessagePrefix(prefix: ChatMessage[], whole: ChatMessage[]): boolean {
+  if (prefix.length > whole.length) return false;
+  for (let index = 0; index < prefix.length; index += 1) {
+    if (JSON.stringify(prefix[index]) !== JSON.stringify(whole[index])) return false;
+  }
+  return true;
 }
 
 // ─── Fact Memory ────────────────────────────────────────────────────────────
@@ -180,10 +304,10 @@ export function createFactMemory(store?: Store<Fact>): FactMemory {
  * Register these with the registry to give the AI memory capabilities.
  */
 export function createMemoryTools(
-  conversations: ConversationMemory,
-  factMemory: FactMemory,
+  conversations?: ConversationMemory,
+  factMemory?: FactMemory,
 ): ToolDefinition<any, any>[] {
-  const storeFact = defineTool<{ content: string; source?: string; tags?: string[] }>({
+  const storeFact = factMemory === undefined ? undefined : defineTool<{ content: string; source?: string; tags?: string[] }>({
     name: "store_fact",
     description:
       "Store a fact for long-term memory. Use this when the user shares " +
@@ -207,7 +331,7 @@ export function createMemoryTools(
     },
   });
 
-  const recallFacts = defineTool<{ query: string; limit?: number }>({
+  const recallFacts = factMemory === undefined ? undefined : defineTool<{ query: string; limit?: number }>({
     name: "recall_facts",
     description:
       "Search long-term memory for stored facts. Use this when you need to " +
@@ -229,7 +353,7 @@ export function createMemoryTools(
     },
   });
 
-  const listThreads = defineTool<Record<string, never>>({
+  const listThreads = conversations === undefined ? undefined : defineTool<Record<string, never>>({
     name: "list_threads",
     description: "List all conversation thread IDs in memory.",
     inputSchema: { type: "object", properties: {} },
@@ -239,7 +363,7 @@ export function createMemoryTools(
     },
   });
 
-  const getThread = defineTool<{ thread_id: string; count?: number }>({
+  const getThread = conversations === undefined ? undefined : defineTool<{ thread_id: string; count?: number }>({
     name: "get_thread",
     description: "Get recent messages from a conversation thread.",
     inputSchema: {
@@ -256,5 +380,7 @@ export function createMemoryTools(
     },
   });
 
-  return [storeFact, recallFacts, listThreads, getThread];
+  return [storeFact, recallFacts, listThreads, getThread].filter(
+    (tool): tool is ToolDefinition<any, any> => tool !== undefined,
+  );
 }

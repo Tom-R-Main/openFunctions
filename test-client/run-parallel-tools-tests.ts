@@ -197,6 +197,49 @@ test("anthropic: rebuild leads with thinking, merges tool_results into one user 
   }
 });
 
+test("anthropic: folds the next user input into a pending tool-result turn", async () => {
+  const cap = mockFetch(TEXT_ONLY_ANTHROPIC);
+  try {
+    await createAnthropicAdapter({ apiKey: "test", reasoningEffort: "high" }).chat([
+      ...parallelHistory(),
+      { role: "user", content: "continue after the tools" },
+    ], buildRegistry());
+    const messages = cap.bodies[0].messages;
+    const finalUser = messages.at(-1);
+    assert.equal(finalUser.role, "user");
+    assert.deepEqual(
+      finalUser.content.map((block: any) => block.type),
+      ["tool_result", "tool_result", "text"],
+    );
+    assert.equal(finalUser.content[2].text, "continue after the tools");
+    for (let index = 1; index < messages.length; index += 1) {
+      assert.notEqual(
+        `${messages[index - 1].role}:${messages[index].role}`,
+        "user:user",
+        "Anthropic requests must not split tool results from the following user input",
+      );
+    }
+  } finally {
+    restoreFetch();
+  }
+});
+
+test("anthropic: coalesces a durable inbox instruction with the next user prompt", async () => {
+  const cap = mockFetch(TEXT_ONLY_ANTHROPIC);
+  try {
+    await createAnthropicAdapter({ apiKey: "test", reasoningEffort: "high" }).chat([
+      { role: "user", content: "parent send-back instruction" },
+      { role: "user", content: "continue working" },
+    ], buildRegistry());
+    const messages = cap.bodies[0].messages;
+    assert.equal(messages.length, 1);
+    assert.equal(messages[0].role, "user");
+    assert.equal(messages[0].content, "parent send-back instruction\n\ncontinue working");
+  } finally {
+    restoreFetch();
+  }
+});
+
 test("anthropic: current models use adaptive effort; thinking off allows parallel tools", async () => {
   // Adaptive thinking on
   let cap = mockFetch(TEXT_ONLY_ANTHROPIC);

@@ -19,7 +19,21 @@
 
 import type { ToolResult } from "./types.js";
 import type { ToolRegistry } from "./registry.js";
-import type { AIAdapter, ChatMessage } from "./adapters/types.js";
+import type {
+  AIAdapter,
+  AdapterSessionState,
+  ChatMessage,
+} from "./adapters/types.js";
+import { validatedAdapterToolCalls } from "./adapters/types.js";
+import { normalizeToolResult, uncertainToolExecution } from "./tool.js";
+import {
+  completeRun,
+  createRunManifest,
+  failRun,
+  RunExecutionError,
+  type RunRecord,
+  type RunToolEffectReceipt,
+} from "./runs.js";
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 
@@ -163,6 +177,32 @@ export function toolStep(
   return async (params) => registry.execute(toolName, params);
 }
 
+function attachWorkflowToolEffects(
+  run: RunRecord,
+  receipts: RunToolEffectReceipt[],
+): RunRecord {
+  if (receipts.length === 0) return run;
+  const copiedReceipts = receipts.map((receipt) => ({
+    name: receipt.name,
+    args: { ...receipt.args },
+    result: { ...receipt.result },
+  }));
+  const certainty = copiedReceipts.some(
+    (receipt) => receipt.result.executionOutcome === "unknown",
+  ) ? "unknown" as const : "known" as const;
+  return {
+    ...run,
+    toolEffects: {
+      state: "partial",
+      certainty,
+      receipts: copiedReceipts,
+      ...(certainty === "unknown"
+        ? { verificationRequired: "verify tool side effects before deciding whether any retry is safe" }
+        : {}),
+    },
+  };
+}
+
 /**
  * Create a step that calls an AI adapter for a single completion.
  * Useful for inserting an LLM call in the middle of a workflow.
@@ -183,34 +223,107 @@ export function llmStep(
   return async (input: string) => {
     const prompt = promptTemplate.replace(/\{\{input\}\}/g, input);
     const messages: ChatMessage[] = [{ role: "user", content: prompt }];
+    const receipts: RunToolEffectReceipt[] = [];
 
     // Run with tool support — the LLM may call tools to answer
-    let maxRounds = 5;
-    while (maxRounds-- > 0) {
-      const response = await adapter.chat(messages, registry);
-
-      if (response.toolCall) {
-        const { id, name, args } = response.toolCall;
-        messages.push({
-          role: "assistant",
-          content: JSON.stringify(args),
-          toolCallId: id,
-          toolName: name,
+    const maxRoundLimit = 5;
+    let maxRounds = maxRoundLimit;
+    let rounds = 0;
+    let sessionState: AdapterSessionState | undefined;
+    let run = createRunManifest({
+      actor: { kind: "agent", name: "workflow_llm_step" },
+      adapter,
+      instructions: prompt,
+      tools: registry.getAll(),
+      maxRounds: maxRoundLimit,
+    });
+    try {
+      while (maxRounds-- > 0) {
+        rounds += 1;
+        const response = await adapter.chat(messages, registry, {
+          resetSession: rounds === 1,
+          ...(sessionState === undefined ? {} : { sessionState }),
         });
+        sessionState = response.sessionState;
 
-        const result = await registry.execute(name, args);
-        messages.push({
-          role: "tool",
-          content: JSON.stringify(result),
-          toolCallId: id,
-          toolName: name,
-        });
-        continue;
+        const calls = validatedAdapterToolCalls(response);
+        if (calls.length > 0) {
+          messages.push(calls.length === 1
+            ? {
+                role: "assistant",
+                content: JSON.stringify(calls[0].args),
+                toolCallId: calls[0].id,
+                toolName: calls[0].name,
+                ...(response.thinking && { thinkingBlocks: response.thinking }),
+                ...(response.providerReplay === undefined
+                  ? {}
+                  : { providerReplay: response.providerReplay }),
+              }
+            : {
+                role: "assistant",
+                content: "",
+                toolCalls: calls,
+                ...(response.thinking && { thinkingBlocks: response.thinking }),
+                ...(response.providerReplay === undefined
+                  ? {}
+                  : { providerReplay: response.providerReplay }),
+              });
+
+          const settledResults = await Promise.allSettled(
+            calls.map((call) => registry.execute(call.name, call.args)),
+          );
+          const executions = settledResults.map((settled, index) =>
+            settled.status === "rejected"
+              ? uncertainToolExecution(settled.reason)
+              : normalizeToolResult(calls[index].name, settled.value)
+          );
+          for (let index = 0; index < calls.length; index += 1) {
+            const call = calls[index];
+            const execution = executions[index];
+            const result = execution.result;
+            receipts.push({
+              name: call.name,
+              args: { ...call.args },
+              result: {
+                success: result.success,
+                ...(Object.prototype.hasOwnProperty.call(result, "data")
+                  ? { data: result.data }
+                  : {}),
+                ...(result.error === undefined ? {} : { error: result.error }),
+                executionOutcome: execution.outcome,
+              },
+            });
+            messages.push({
+              role: "tool",
+              content: execution.modelContent,
+              toolCallId: call.id,
+              toolName: call.name,
+            });
+          }
+          if (executions.some((execution) => execution.outcome === "unknown")) {
+            throw new Error("Tool execution outcome is unknown; verify side effects before retrying");
+          }
+          continue;
+        }
+
+        return response.text ?? "";
       }
 
-      return response.text ?? "";
+      run = completeRun(run, { limitReached: true });
+      run = attachWorkflowToolEffects(run, receipts);
+      throw new RunExecutionError(
+        `Workflow LLM step exceeded max rounds (${maxRoundLimit})`,
+        run,
+      );
+    } catch (error) {
+      if (error instanceof RunExecutionError) throw error;
+      run = failRun(run, error);
+      run = attachWorkflowToolEffects(run, receipts);
+      throw new RunExecutionError(
+        `Workflow LLM step failed: ${error instanceof Error ? error.message : String(error)}`,
+        run,
+        { cause: error },
+      );
     }
-
-    return "(exceeded max rounds)";
   };
 }

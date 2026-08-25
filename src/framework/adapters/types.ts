@@ -40,6 +40,32 @@ export interface ToolCall {
   args: Record<string, unknown>;
 }
 
+/** Exact provider-native output items retained for stateless replay. */
+export interface AdapterReplayPayload {
+  /** Stable adapter protocol key, such as `openai.responses`. */
+  key: string;
+  /** JSON-safe provider output items, preserved in original order. */
+  outputItems: unknown[];
+}
+
+/** Evidence that a missing provider continuation was recovered by exact replay. */
+export interface AdapterContinuationRecovery {
+  reason: "missing_or_expired";
+  failedContinuationId: string;
+}
+
+/** Explicit, JSON-safe continuation state owned by the session journal. */
+export interface AdapterSessionState {
+  /** Stable adapter protocol key, such as `openai.responses`. */
+  key: string;
+  /** Opaque provider continuation identifier. */
+  continuationId: string;
+  /** Non-secret hash of the provider protocol, model, and endpoint. */
+  fingerprint: string;
+  /** Hash of instructions that established providers whose chains retain them. */
+  instructionsSha256?: string;
+}
+
 /** A message in the conversation */
 export interface ChatMessage {
   role: "user" | "assistant" | "tool";
@@ -63,6 +89,8 @@ export interface ChatMessage {
    * adapter that produced it.
    */
   thinkingBlocks?: unknown[];
+  /** Exact provider output associated with this assistant message. */
+  providerReplay?: AdapterReplayPayload;
 }
 
 /** What the adapter returns after calling the AI */
@@ -86,6 +114,99 @@ export interface AdapterResponse {
    * history message so the adapter can replay them on the next request. Opaque.
    */
   thinking?: unknown[];
+
+  /** Continuation state produced by this response, if the adapter is stateful. */
+  sessionState?: AdapterSessionState;
+
+  /** Exact provider-native output to retain with the assistant history item. */
+  providerReplay?: AdapterReplayPayload;
+
+  /** Present when an expired/missing continuation was recovered transparently. */
+  continuationRecovery?: AdapterContinuationRecovery;
+}
+
+/**
+ * Validate and normalize the tool-call set returned by an adapter before any
+ * handler starts. Adapters are runtime trust boundaries even when their static
+ * TypeScript type is correct.
+ */
+export function validatedAdapterToolCalls(response: AdapterResponse): ToolCall[] {
+  if (!isPlainRecord(response)) throw new Error("Adapter response must be an object");
+  const toolCall = response.toolCall;
+  const toolCalls = response.toolCalls;
+  if (toolCall !== undefined && toolCalls !== undefined) {
+    throw new Error("Adapter response cannot contain both toolCall and toolCalls");
+  }
+  if (toolCalls !== undefined && !Array.isArray(toolCalls)) {
+    throw new Error("Adapter response toolCalls must be an array");
+  }
+  const calls: unknown[] = toolCalls !== undefined
+    ? toolCalls
+    : toolCall === undefined
+      ? []
+      : [toolCall];
+  if (toolCalls !== undefined && calls.length === 0) {
+    throw new Error("Adapter response toolCalls must be a non-empty array");
+  }
+
+  const ids = new Set<string>();
+  calls.forEach((call, index) => {
+    if (!isPlainRecord(call)) {
+      throw new Error(`Adapter tool call ${index} must be an object`);
+    }
+    if (typeof call.id !== "string" || call.id.trim() === "") {
+      throw new Error(`Adapter tool call ${index} id must be a non-empty string`);
+    }
+    if (typeof call.name !== "string" || call.name.trim() === "") {
+      throw new Error(`Adapter tool call ${call.id} name must be a non-empty string`);
+    }
+    if (ids.has(call.id)) {
+      throw new Error(`Adapter response contains duplicate tool call id ${call.id}`);
+    }
+    ids.add(call.id);
+    if (!isPlainRecord(call.args)) {
+      throw new Error(`Adapter tool call ${call.id} args must be a JSON object`);
+    }
+    assertJsonSafe(call.args, `Adapter tool call ${call.id} args`, new Set<object>());
+  });
+  return calls as ToolCall[];
+}
+
+function assertJsonSafe(value: unknown, label: string, ancestors: Set<object>): void {
+  if (value === null || typeof value === "string" || typeof value === "boolean") return;
+  if (typeof value === "number") {
+    if (!Number.isFinite(value)) throw new Error(`${label} contains a non-finite number`);
+    return;
+  }
+  if (typeof value !== "object") {
+    throw new Error(`${label} contains a non-JSON value`);
+  }
+  if (ancestors.has(value)) throw new Error(`${label} contains a cycle`);
+  ancestors.add(value);
+  try {
+    if (Array.isArray(value)) {
+      for (let index = 0; index < value.length; index += 1) {
+        if (!(index in value)) throw new Error(`${label} contains a sparse array`);
+        assertJsonSafe(value[index], `${label}[${index}]`, ancestors);
+      }
+      return;
+    }
+    if (!isPlainRecord(value)) throw new Error(`${label} contains a non-plain object`);
+    if (Object.getOwnPropertySymbols(value).length > 0) {
+      throw new Error(`${label} contains symbol keys`);
+    }
+    for (const key of Object.keys(value)) {
+      assertJsonSafe(value[key], `${label}.${key}`, ancestors);
+    }
+  } finally {
+    ancestors.delete(value);
+  }
+}
+
+function isPlainRecord(value: unknown): value is Record<string, unknown> {
+  if (value === null || typeof value !== "object" || Array.isArray(value)) return false;
+  const prototype = Object.getPrototypeOf(value);
+  return prototype === Object.prototype || prototype === null;
 }
 
 /** Configuration for an adapter */
@@ -112,10 +233,16 @@ export interface AdapterConfig {
    * don't expose reasoning.
    */
   reasoningEffort?: ReasoningEffort;
+
+  /** Injectable HTTP transport, primarily for deterministic tests and hosts. */
+  fetchImpl?: typeof fetch;
 }
 
 /** Options for controlling AI behavior on a per-call basis */
 export interface ChatOptions {
+  /** Abort the provider request when supported by its transport. */
+  signal?: AbortSignal;
+
   /** Control tool calling: "auto" (default), "required" (must call a tool), or specific tool name */
   toolChoice?: "auto" | "required" | { name: string };
   /** Override the system prompt for this specific call (used by agents) */
@@ -129,14 +256,15 @@ export interface ChatOptions {
    */
   oneShot?: boolean;
   /**
-   * Reset the adapter's stateful session before this call, then proceed
-   * normally (the new response id IS saved for subsequent calls). Use
-   * this on the first call of a logically separate conversation so
-   * stateful adapters (OpenAI/xAI Responses API) don't accidentally
-   * thread the new conversation onto whatever was cached. Different
-   * from oneShot, which skips state entirely.
+   * Ignore supplied continuation state for this call and start a fresh
+   * provider chain. The returned response can include replacement
+   * `sessionState` for the owning session journal to persist. Different
+   * from oneShot, which neither reads nor returns continuation state.
    */
   resetSession?: boolean;
+
+  /** Explicit continuation state projected from the owning session journal. */
+  sessionState?: AdapterSessionState;
 }
 
 /** An AI provider adapter */
@@ -149,6 +277,9 @@ export interface AIAdapter {
 
   /** Exact role/model resolution persisted in legible run manifests. */
   readonly modelSelection?: ModelSelection;
+
+  /** Stable key used by the owning session to read/write continuation state. */
+  readonly sessionStateKey?: string;
 
   /**
    * Send a conversation to the AI with tools available.

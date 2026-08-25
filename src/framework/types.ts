@@ -168,6 +168,8 @@ export interface ToolResult<T = unknown> {
   success: boolean;
   data?: T;
   error?: string;
+  /** Executor certainty. Handler throws are unknown because effects may have occurred. */
+  executionOutcome?: "succeeded" | "failed" | "unknown";
   /** Optional human-friendly message (shown to the user by the AI) */
   message?: string;
 }

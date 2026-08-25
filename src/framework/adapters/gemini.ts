@@ -27,6 +27,7 @@ export function createGeminiAdapter(config?: Partial<AdapterConfig>): AIAdapter 
   const { model, reasoningEffort } = modelSelection;
   const systemPrompt = config?.systemPrompt ?? "You are a helpful assistant with access to tools. Use tools when they're relevant.";
   const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
+  const doFetch = config?.fetchImpl ?? fetch;
 
   return {
     name: config?.name ?? "Gemini",
@@ -110,8 +111,9 @@ export function createGeminiAdapter(config?: Partial<AdapterConfig>): AIAdapter 
         body.toolConfig = { functionCallingConfig: { mode } };
       }
 
-      const response = await fetch(url, {
+      const response = await doFetch(url, {
         method: "POST",
+        signal: options?.signal,
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(body),
       });

@@ -50,6 +50,7 @@ export function createAnthropicAdapter(config?: Partial<AdapterConfig>): AIAdapt
   const { model } = modelSelection;
   const systemPrompt = config?.systemPrompt ?? "You are a helpful assistant with access to tools. Use tools when they're relevant.";
   const reasoningEffort = modelSelection.reasoningEffort;
+  const doFetch = config?.fetchImpl ?? fetch;
   const thinkingBudget = THINKING_BUDGET[reasoningEffort];
   const adaptiveThinking = supportsAdaptiveThinking(model);
   const thinkingEnabled = adaptiveThinking
@@ -67,10 +68,31 @@ export function createAnthropicAdapter(config?: Partial<AdapterConfig>): AIAdapt
 
       for (const msg of messages) {
         if (msg.role === "user") {
-          anthropicMessages.push({
-            role: "user",
-            content: anthropicContent(msg.content),
-          });
+          const content = anthropicContent(msg.content);
+          const last = anthropicMessages[anthropicMessages.length - 1];
+          if (last?.role === "user") {
+            // Durable inbox delivery can legitimately place a queued user
+            // instruction immediately before the next submitted prompt.
+            // Anthropic requires alternating roles, so coalesce every adjacent
+            // user message (including the existing tool-result case).
+            if (typeof last.content === "string" && typeof content === "string") {
+              last.content = `${last.content}\n\n${content}`;
+            } else {
+              const priorBlocks = typeof last.content === "string"
+                ? [{ type: "text", text: last.content }]
+                : Array.isArray(last.content)
+                  ? last.content
+                  : [last.content];
+              const nextBlocks = typeof content === "string"
+                ? [{ type: "text", text: content }]
+                : Array.isArray(content)
+                  ? content
+                  : [content];
+              last.content = [...priorBlocks, ...nextBlocks];
+            }
+          } else {
+            anthropicMessages.push({ role: "user", content });
+          }
         } else if (msg.role === "assistant") {
           // Extended thinking REQUIRES the original thinking block(s) to lead
           // the assistant message that contains the tool_use(s), replayed
@@ -177,8 +199,9 @@ export function createAnthropicAdapter(config?: Partial<AdapterConfig>): AIAdapt
         body.tool_choice = toolChoice;
       }
 
-      const response = await fetch("https://api.anthropic.com/v1/messages", {
+      const response = await doFetch("https://api.anthropic.com/v1/messages", {
         method: "POST",
+        signal: options?.signal,
         headers: {
           "Content-Type": "application/json",
           "x-api-key": apiKey,
