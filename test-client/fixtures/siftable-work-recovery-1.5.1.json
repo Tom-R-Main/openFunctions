@@ -1,0 +1,392 @@
+{
+  "schemaVersion": 1,
+  "status": "blocked",
+  "package": {
+    "name": "@siftable/mcp-server",
+    "version": "1.5.1",
+    "shasum": "baab327fe1f43543600c6040fed5905e200417f2",
+    "integrity": "sha512-61n1Hxk42MVSpRs215Ua/V1Px+mdFoJ6K/BKEFlqnHsAK57hmMP9OwhnRGVgGRqQugKqINOVIOdgwwpurMTeJg=="
+  },
+  "checkedAt": "2026-10-12",
+  "scope": "Published npm client/server package only; no production queue operations or server database guarantees tested.",
+  "capabilities": {
+    "version": "siftable-npm-1.5.1-inspection-v1",
+    "keyedOperations": [],
+    "receiptLookup": [],
+    "missingReceiptProvesNotStarted": false,
+    "automaticRecoveryEnabled": false
+  },
+  "common": {
+    "principal": "Hosted sessions require validated authenticated principalId and adapter-private WorkLeaseSessionStore. Public arguments cannot supply principal identity.",
+    "receipt": "Canonical structuredContent: kind=sift.action_receipt,schemaVersion=1, receiptId,completedAt,surface=mcp,binding,operation(identifier,schemaDigest),outcome,result,error; optional idempotency(key,payloadDigest,duplicateBehavior,disposition).",
+    "certainty": "Only a validated operation-matching rejected receipt is pre-handler rejection. failed includes handler exceptions and post-effect storage failures; it does not prove not-started.",
+    "apiKeyScope": null,
+    "apiRetentionWindowMs": null,
+    "receiptLookupEndpoint": null,
+    "missingReceiptInterpretation": "unknown",
+    "sessionStore": "Published default store is process-local, purges after24h since update or lease expiry. This is not API idempotency receipt retention. Production persistent custody behavior is outside this package.",
+    "workContractParser": "parseAgentWorkContract is internal in dist/vendor/agentWorkContract.js. No parseWorkContract or supported contract-parser export in published package.json exports."
+  },
+  "operations": [
+    {
+      "operation": "open",
+      "tool": "work_session_open",
+      "action": null,
+      "requestFields": [
+        "workspaceId",
+        "workItemId",
+        "assignedAlias",
+        "claimOwner",
+        "leaseSeconds",
+        "idempotencyKey"
+      ],
+      "requiredFields": [
+        "claimOwner",
+        "idempotencyKey"
+      ],
+      "transportKeyField": "idempotencyKey",
+      "keyScope": null,
+      "retentionWindowMs": null,
+      "serverPayloadConflictContract": "not_verified",
+      "sessionClosedReplay": null,
+      "payloadSchemaId": "sift.work.lease-session.v1",
+      "identity": "principal_bound_opaque_session_handle",
+      "readback": "work_item_get reports current target state but does not establish operation receipt identity or prove non-execution",
+      "retryAfterUnknown": "disabled",
+      "reconciliationAfterUnknown": "unknown"
+    },
+    {
+      "operation": "start",
+      "tool": "work_session_transition",
+      "action": "start",
+      "requestFields": [
+        "sessionHandle",
+        "action",
+        "leaseSeconds",
+        "blockedReason",
+        "failureReason",
+        "resultSummary",
+        "artifactRefs",
+        "verificationResults",
+        "durableMemory",
+        "idempotencyKey"
+      ],
+      "requiredFields": [
+        "sessionHandle",
+        "action",
+        "idempotencyKey"
+      ],
+      "transportKeyField": "idempotencyKey",
+      "keyScope": null,
+      "retentionWindowMs": null,
+      "serverPayloadConflictContract": "not_verified",
+      "sessionClosedReplay": null,
+      "payloadSchemaId": "sift.work.lease-session.v1",
+      "identity": "principal_bound_opaque_session_handle",
+      "readback": "work_item_get reports current target state but does not establish operation receipt identity or prove non-execution",
+      "retryAfterUnknown": "disabled",
+      "reconciliationAfterUnknown": "unknown"
+    },
+    {
+      "operation": "heartbeat",
+      "tool": "work_session_transition",
+      "action": "heartbeat",
+      "requestFields": [
+        "sessionHandle",
+        "action",
+        "leaseSeconds",
+        "blockedReason",
+        "failureReason",
+        "resultSummary",
+        "artifactRefs",
+        "verificationResults",
+        "durableMemory",
+        "idempotencyKey"
+      ],
+      "requiredFields": [
+        "sessionHandle",
+        "action",
+        "idempotencyKey"
+      ],
+      "transportKeyField": "idempotencyKey",
+      "keyScope": null,
+      "retentionWindowMs": null,
+      "serverPayloadConflictContract": "not_verified",
+      "sessionClosedReplay": null,
+      "payloadSchemaId": "sift.work.lease-session.v1",
+      "identity": "principal_bound_opaque_session_handle",
+      "readback": "work_item_get reports current target state but does not establish operation receipt identity or prove non-execution",
+      "retryAfterUnknown": "disabled",
+      "reconciliationAfterUnknown": "unknown"
+    },
+    {
+      "operation": "complete",
+      "tool": "work_session_transition",
+      "action": "complete",
+      "requestFields": [
+        "sessionHandle",
+        "action",
+        "leaseSeconds",
+        "blockedReason",
+        "failureReason",
+        "resultSummary",
+        "artifactRefs",
+        "verificationResults",
+        "durableMemory",
+        "idempotencyKey"
+      ],
+      "requiredFields": [
+        "sessionHandle",
+        "action",
+        "idempotencyKey"
+      ],
+      "transportKeyField": "idempotencyKey",
+      "keyScope": null,
+      "retentionWindowMs": null,
+      "serverPayloadConflictContract": "not_verified",
+      "sessionClosedReplay": "action_and_key_only_no_payload_check",
+      "payloadSchemaId": "sift.work.lease-session.v1",
+      "identity": "principal_bound_opaque_session_handle",
+      "readback": "work_item_get reports current target state but does not establish operation receipt identity or prove non-execution",
+      "retryAfterUnknown": "disabled",
+      "reconciliationAfterUnknown": "unknown"
+    },
+    {
+      "operation": "review",
+      "tool": "work_session_transition",
+      "action": "review",
+      "requestFields": [
+        "sessionHandle",
+        "action",
+        "leaseSeconds",
+        "blockedReason",
+        "failureReason",
+        "resultSummary",
+        "artifactRefs",
+        "verificationResults",
+        "durableMemory",
+        "idempotencyKey"
+      ],
+      "requiredFields": [
+        "sessionHandle",
+        "action",
+        "idempotencyKey"
+      ],
+      "transportKeyField": "idempotencyKey",
+      "keyScope": null,
+      "retentionWindowMs": null,
+      "serverPayloadConflictContract": "not_verified",
+      "sessionClosedReplay": "action_and_key_only_no_payload_check",
+      "payloadSchemaId": "sift.work.lease-session.v1",
+      "identity": "principal_bound_opaque_session_handle",
+      "readback": "work_item_get reports current target state but does not establish operation receipt identity or prove non-execution",
+      "retryAfterUnknown": "disabled",
+      "reconciliationAfterUnknown": "unknown"
+    },
+    {
+      "operation": "block",
+      "tool": "work_session_transition",
+      "action": "block",
+      "requestFields": [
+        "sessionHandle",
+        "action",
+        "leaseSeconds",
+        "blockedReason",
+        "failureReason",
+        "resultSummary",
+        "artifactRefs",
+        "verificationResults",
+        "durableMemory",
+        "idempotencyKey"
+      ],
+      "requiredFields": [
+        "sessionHandle",
+        "action",
+        "idempotencyKey"
+      ],
+      "transportKeyField": "idempotencyKey",
+      "keyScope": null,
+      "retentionWindowMs": null,
+      "serverPayloadConflictContract": "not_verified",
+      "sessionClosedReplay": null,
+      "payloadSchemaId": "sift.work.lease-session.v1",
+      "identity": "principal_bound_opaque_session_handle",
+      "readback": "work_item_get reports current target state but does not establish operation receipt identity or prove non-execution",
+      "retryAfterUnknown": "disabled",
+      "reconciliationAfterUnknown": "unknown"
+    },
+    {
+      "operation": "fail",
+      "tool": "work_session_transition",
+      "action": "fail",
+      "requestFields": [
+        "sessionHandle",
+        "action",
+        "leaseSeconds",
+        "blockedReason",
+        "failureReason",
+        "resultSummary",
+        "artifactRefs",
+        "verificationResults",
+        "durableMemory",
+        "idempotencyKey"
+      ],
+      "requiredFields": [
+        "sessionHandle",
+        "action",
+        "idempotencyKey"
+      ],
+      "transportKeyField": "idempotencyKey",
+      "keyScope": null,
+      "retentionWindowMs": null,
+      "serverPayloadConflictContract": "not_verified",
+      "sessionClosedReplay": "action_and_key_only_no_payload_check",
+      "payloadSchemaId": "sift.work.lease-session.v1",
+      "identity": "principal_bound_opaque_session_handle",
+      "readback": "work_item_get reports current target state but does not establish operation receipt identity or prove non-execution",
+      "retryAfterUnknown": "disabled",
+      "reconciliationAfterUnknown": "unknown"
+    },
+    {
+      "operation": "release",
+      "tool": "work_session_close",
+      "action": "release",
+      "requestFields": [
+        "sessionHandle",
+        "resultSummary",
+        "idempotencyKey"
+      ],
+      "requiredFields": [
+        "sessionHandle",
+        "idempotencyKey"
+      ],
+      "transportKeyField": "idempotencyKey",
+      "keyScope": null,
+      "retentionWindowMs": null,
+      "serverPayloadConflictContract": "not_verified",
+      "sessionClosedReplay": "action_and_key_only_no_payload_check",
+      "payloadSchemaId": "sift.work.lease-session.v1",
+      "identity": "principal_bound_opaque_session_handle",
+      "readback": "work_item_get reports current target state but does not establish operation receipt identity or prove non-execution",
+      "retryAfterUnknown": "disabled",
+      "reconciliationAfterUnknown": "unknown"
+    },
+    {
+      "operation": "evidence",
+      "tool": "work_item_verification_evidence_submit",
+      "requestFields": [
+        "workspaceId",
+        "workItemId",
+        "claimOwner",
+        "claimToken",
+        "planVersion",
+        "stepId",
+        "attemptId",
+        "outcome",
+        "exitCode",
+        "output",
+        "artifactRefs",
+        "environmentLabel",
+        "provenance",
+        "ranAt"
+      ],
+      "requiredFields": [
+        "workItemId",
+        "planVersion",
+        "stepId",
+        "attemptId",
+        "outcome",
+        "environmentLabel"
+      ],
+      "transportKeyField": null,
+      "generatedKey": "ExfClient generates fresh work-verification-evidence key every invocation",
+      "evidenceIdentityField": "attemptId",
+      "identityScope": null,
+      "retentionWindowMs": null,
+      "conflictingAttemptPayloadContract": "not_verified",
+      "tokenCustody": "User evidence path excludes claimOwner/claimToken. Workspace-service raw custody is unsupported by default hosted work profile.",
+      "readback": "Verification plan/history exist; authoritative receipt/attempt identity lookup and exact duplicate matching are not established by published package.",
+      "retryAfterUnknown": "disabled",
+      "reconciliationAfterUnknown": "unknown"
+    }
+  ],
+  "sources": [
+    {
+      "path": "package.json",
+      "purpose": "version and public export map"
+    },
+    {
+      "path": "dist/workLeaseSessionTools.js",
+      "lines": [
+        1,
+        40,
+        130,
+        227,
+        282,
+        312,
+        337,
+        363
+      ],
+      "purpose": "required fields, custody, stable session handle, closed replay, compensating release and post-effect save failures"
+    },
+    {
+      "path": "dist/exfClient.js",
+      "lines": [
+        642,
+        696,
+        702,
+        719,
+        724
+      ],
+      "purpose": "API reads, caller keys for claim/transition and generated evidence key"
+    },
+    {
+      "path": "dist/factory.js",
+      "lines": [
+        791,
+        803,
+        1446,
+        1497,
+        1527,
+        1558
+      ],
+      "purpose": "rejected versus failed/succeeded canonical action receipts"
+    },
+    {
+      "path": "dist/vendor/agentWorkContract.js",
+      "lines": [
+        4,
+        5,
+        6
+      ],
+      "purpose": "private parser name"
+    }
+  ],
+  "findings": [
+    {
+      "id": "evidence-retry-key",
+      "severity": "blocker",
+      "finding": "submitWorkVerificationEvidence generates a new Idempotency-Key for every invocation; stable attemptId is present in input but server attempt uniqueness/conflict/reconciliation is unverified."
+    },
+    {
+      "id": "closed-payload-drift",
+      "severity": "blocker",
+      "finding": "Closed hosted session replay tests terminalAction and terminalIdempotencyKey only. A changed resultSummary/artifactRefs payload with the same key is not compared before replaying stored result, despite canonical receipt duplicateBehavior advertising changed-payload rejection."
+    },
+    {
+      "id": "api-receipt-contract",
+      "severity": "blocker",
+      "finding": "Client sends caller keys, but package does not establish server key namespace, dedup retention, identical/conflicting payload semantics for all operations, or authoritative receipt lookup."
+    },
+    {
+      "id": "parser-export",
+      "severity": "blocker",
+      "finding": "Required canonical parser is not exposed by supported package exports; private vendored imports are not used."
+    },
+    {
+      "id": "local-custody-not-production",
+      "severity": "limitation",
+      "finding": "Published default store is in memory. Hosted production session durability and retention require separate server implementation evidence."
+    }
+  ]
+}

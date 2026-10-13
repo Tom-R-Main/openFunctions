@@ -15,15 +15,15 @@
     "node": ">=22"
   },
   "type": "module",
-  "main": "src/index.ts",
+  "main": "./dist/src/index.js",
   "bin": {
-    "openfunction": "./src/index.ts"
+    "openfunction": "./dist/src/cli.js"
   },
   "scripts": {
-    "start": "tsx src/index.ts",
-    "dev": "tsx watch src/index.ts",
-    "build": "tsc",
-    "build:ts6": "tsc6",
+    "start": "tsx src/workshop.ts",
+    "dev": "tsx watch src/workshop.ts",
+    "build": "tsc -p tsconfig.build.json && node scripts/prepare-package.mjs",
+    "build:ts6": "tsc6 -p tsconfig.build.json && node scripts/prepare-package.mjs",
     "typecheck": "tsc --noEmit",
     "typecheck:ts6": "tsc6 --noEmit",
     "verify:typescript": "node scripts/verify-typescript-toolchain.mjs && node scripts/verify-typescript-parity.mjs",
@@ -34,17 +34,44 @@
     "test:framework": "tsx test-client/run-session-tests.ts && tsx test-client/run-framework-tests.ts && tsx test-client/run-parallel-tools-tests.ts && tsx test-client/run-legible-execution-tests.ts",
     "create-tool": "tsx scripts/create-tool.ts",
     "docs": "tsx scripts/generate-docs.ts",
-    "inspect": "npx @modelcontextprotocol/inspector tsx src/index.ts"
+    "inspect": "npx @modelcontextprotocol/inspector tsx src/workshop.ts",
+    "prepack": "npm run build",
+    "test:package": "node test-client/run-package-tests.mjs",
+    "test:pg-store": "tsx test-client/run-pg-store-tests.ts",
+    "prebuild": "node scripts/prepare-package.mjs --clean",
+    "prebuild:ts6": "node scripts/prepare-package.mjs --clean",
+    "test:validation": "tsx test-client/run-validation-tests.ts",
+    "test:mcp": "tsx test-client/run-mcp-tests.ts",
+    "test:scheduler": "tsx test-client/run-tool-scheduler-tests.ts",
+    "test:runtime-bridge": "tsx test-client/run-runtime-bridge-tests.ts",
+    "test:caller-convergence": "tsx test-client/run-caller-convergence-tests.ts",
+    "test:durability": "tsx test-client/run-durability-tests.ts",
+    "test:session-v2": "tsx test-client/run-session-v2-tests.ts",
+    "test:work": "tsx test-client/run-work-tests.ts",
+    "test:mcp-provider": "tsx test-client/run-mcp-provider-tests.ts",
+    "test:execution": "tsx test-client/run-execution-tests.ts",
+    "test:chat-execution": "tsx test-client/run-chat-execution-tests.ts",
+    "test:grants": "tsx test-client/run-grant-tests.ts",
+    "test:hermes": "node test-client/run-hermes-tests.mjs",
+    "test:work-cli": "npm run build && tsx test-client/run-work-cli-tests.ts",
+    "test:context": "tsx test-client/run-context-tests.ts",
+    "test:siftable-work": "tsx test-client/run-siftable-work-provider-tests.ts",
+    "test:providers": "npm run test:mcp-provider && npm run test:siftable-work && tsx test-client/run-siftable-provider-tests.ts",
+    "test:focused": "npm run test:validation && npm run test:execution && npm run test:scheduler && npm run test:runtime-bridge && npm run test:caller-convergence && npm run test:mcp && npm run test:durability && npm run test:session-v2 && npm run test:chat-execution && npm run test:context && npm run test:grants && npm run test:work && npm run test:pg-store && npm run test:providers && npm run test:hermes-config",
+    "test:hosts": "npm run build && npm --prefix plugins/openclaw-execufunction run verify && npm --prefix plugins/openclaw-openfunctions run validate && npm --prefix plugins/pi-openfunctions run typecheck && node test-client/run-host-plugin-tests.mjs",
+    "test:hermes-config": "tsx test-client/run-hermes-config-tests.ts"
   },
   "dependencies": {
-    "@modelcontextprotocol/sdk": "^1.30.0",
-    "@siftable/mcp-server": "^1.2.27",
-    "pg": "^8.22.0"
+    "@modelcontextprotocol/sdk": "1.30.0",
+    "ajv": "8.20.0",
+    "ajv-formats": "3.0.1"
   },
   "devDependencies": {
-    "@typescript/native": "npm:typescript@7.0.2",
+    "@siftable/mcp-server": "1.5.1",
     "@types/node": "^22.0.0",
     "@types/pg": "^8.20.0",
+    "@typescript/native": "npm:typescript@7.0.2",
+    "pg": "8.22.0",
     "tsx": "^4.23.12",
     "typescript": "npm:@typescript/typescript6@6.0.2"
   },
@@ -52,6 +79,135 @@
     "@typescript/old": "npm:typescript@6.0.3",
     "@siftable/mcp-server": {
       "zod": "3.25.76"
+    }
+  },
+  "types": "./dist/src/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/src/index.d.ts",
+      "import": "./dist/src/index.js"
+    },
+    "./framework": {
+      "types": "./dist/src/framework/index.d.ts",
+      "import": "./dist/src/framework/index.js"
+    },
+    "./framework/core": {
+      "types": "./dist/src/framework/core.d.ts",
+      "import": "./dist/src/framework/core.js"
+    },
+    "./framework/openclaw": {
+      "types": "./dist/src/framework/openclaw.d.ts",
+      "import": "./dist/src/framework/openclaw.js"
+    },
+    "./framework/pi": {
+      "types": "./dist/src/framework/pi.d.ts",
+      "import": "./dist/src/framework/pi.js"
+    },
+    "./framework/hermes": {
+      "types": "./dist/src/framework/hermes.d.ts",
+      "import": "./dist/src/framework/hermes.js"
+    },
+    "./framework/session": {
+      "types": "./dist/src/framework/session.d.ts",
+      "import": "./dist/src/framework/session.js"
+    },
+    "./framework/runs": {
+      "types": "./dist/src/framework/runs.d.ts",
+      "import": "./dist/src/framework/runs.js"
+    },
+    "./framework/context": {
+      "types": "./dist/src/framework/context.d.ts",
+      "import": "./dist/src/framework/context.js"
+    },
+    "./framework/store": {
+      "types": "./dist/src/framework/store.d.ts",
+      "import": "./dist/src/framework/store.js"
+    },
+    "./framework/pg-store": {
+      "types": "./dist/src/framework/pg-store.d.ts",
+      "import": "./dist/src/framework/pg-store.js"
+    },
+    "./framework/prompts": {
+      "types": "./dist/src/framework/prompts.d.ts",
+      "import": "./dist/src/framework/prompts.js"
+    },
+    "./framework/registry": {
+      "types": "./dist/src/framework/registry.d.ts",
+      "import": "./dist/src/framework/registry.js"
+    },
+    "./framework/tool": {
+      "types": "./dist/src/framework/tool.d.ts",
+      "import": "./dist/src/framework/tool.js"
+    },
+    "./framework/server": {
+      "types": "./dist/src/framework/server.d.ts",
+      "import": "./dist/src/framework/server.js"
+    },
+    "./framework/types": {
+      "types": "./dist/src/framework/types.d.ts",
+      "import": "./dist/src/framework/types.js"
+    },
+    "./framework/adapters": {
+      "types": "./dist/src/framework/adapters/index.d.ts",
+      "import": "./dist/src/framework/adapters/index.js"
+    },
+    "./providers/execufunction": {
+      "types": "./dist/src/providers/execufunction/index.d.ts",
+      "import": "./dist/src/providers/execufunction/index.js"
+    },
+    "./providers/siftable": {
+      "types": "./dist/src/providers/execufunction/index.d.ts",
+      "import": "./dist/src/providers/execufunction/index.js"
+    },
+    "./framework/artifacts": {
+      "types": "./dist/src/framework/artifacts.d.ts",
+      "import": "./dist/src/framework/artifacts.js"
+    },
+    "./framework/execution-journal": {
+      "types": "./dist/src/framework/execution-journal.d.ts",
+      "import": "./dist/src/framework/execution-journal.js"
+    },
+    "./framework/execution": {
+      "types": "./dist/src/framework/executor.d.ts",
+      "import": "./dist/src/framework/executor.js"
+    },
+    "./framework/work": {
+      "types": "./dist/src/framework/work/index.d.ts",
+      "import": "./dist/src/framework/work/index.js"
+    },
+    "./providers/mcp": {
+      "types": "./dist/src/providers/mcp/index.d.ts",
+      "import": "./dist/src/providers/mcp/index.js"
+    },
+    "./providers/siftable-work": {
+      "types": "./dist/src/providers/siftable-work/index.d.ts",
+      "import": "./dist/src/providers/siftable-work/index.js"
+    },
+    "./runtime/work-profile": {
+      "types": "./dist/src/runtime/work-profile.d.ts",
+      "import": "./dist/src/runtime/work-profile.js"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "sideEffects": [
+    "./dist/src/workshop.js",
+    "./dist/src/register-tools.js",
+    "./dist/src/framework/env.js"
+  ],
+  "peerDependencies": {
+    "@siftable/mcp-server": "^1.5.1",
+    "pg": "^8.22.0"
+  },
+  "peerDependenciesMeta": {
+    "pg": {
+      "optional": true
+    },
+    "@siftable/mcp-server": {
+      "optional": true
     }
   }
 }

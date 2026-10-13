@@ -10,6 +10,8 @@ import { createSiftableProvider } from "../src/providers/execufunction/index.js"
 import { createSiftableSdkTools } from "../src/providers/execufunction/sdk-tools.js";
 import {
   createVaultTools,
+  createCodeMemoryTools,
+  createCodebaseTools,
   createWorkItemTools,
 } from "../src/providers/execufunction/tools.js";
 
@@ -98,6 +100,7 @@ test("canonical provider surface follows the installed MCP SDK", async () => {
   const expectedNames = TOOLS
     .filter((tool) => isToolEnabled(tool.name))
     .filter((tool) => isToolAllowedForTransport(tool.name, "hosted_remote"))
+    .filter((tool) => !tool.name.startsWith("work_session_"))
     .map((tool) => tool.name);
 
   assert.deepEqual(actual.map((tool) => tool.name), expectedNames);
@@ -140,6 +143,9 @@ test("canonical handlers delegate to SDK execution and return structured receipt
       emoji: null,
     }],
     nextCursor: null,
+    page: { returned: 1, nextCursor: null, total: null, complete: true, snapshotId: null },
+    omissions: ["totalCount"],
+    warnings: [],
   });
   assert.match(result.message ?? "", /Alpha/);
 });
@@ -150,6 +156,9 @@ test("legacy aliases remain explicitly opt-in", async () => {
   const names = connected.createTools().map((tool) => tool.name);
   assert.ok(names.includes("task_list"));
   assert.ok(names.includes("exf_tasks_list"));
+  assert.equal(names.some((name) => name.startsWith("work_session_")), false);
+  assert.equal(names.includes("exf_codebase_search"), false);
+  assert.equal(names.includes("exf_code_who_knows"), false);
 });
 
 test("metadata describes the graph and distinct planning/execution lifecycles", () => {
@@ -158,4 +167,30 @@ test("metadata describes the graph and distinct planning/execution lifecycles", 
   assert.ok(metadata.capabilities.includes("agent_work"));
   assert.ok(metadata.capabilities.includes("capabilities"));
   assert.equal(metadata.auth?.envVar, "SIFT_TOKEN");
+});
+
+
+test("legacy factories supply explicit SDK1.5.1 retry keys without adding them to payload", async () => {
+  const captured: { payload: unknown; key: string }[] = [];
+  const raw = {
+    createVaultEntry: async (payload: unknown, key: string) => { captured.push({ payload, key }); return { statusCode: 200, data: { id: "vault-1" } }; },
+    storeCodeMemory: async (payload: unknown, key: string) => { captured.push({ payload, key }); return { statusCode: 200, data: { id: "memory-1" } }; },
+  };
+  const client = clientWithRaw(raw);
+  const vault = createVaultTools(client).find((tool) => tool.name === "exf_vault_create")!;
+  await vault.handler({ name: "fixture", payload: { value: "synthetic" }, idempotencyKey: "explicit-key" });
+  const memory = createCodeMemoryTools(client).find((tool) => tool.name === "exf_code_memory_store")!;
+  await memory.handler({ fact: "fixture", category: "test" }, { idempotencyKey: "host-key" });
+  assert.deepEqual(captured, [
+    { payload: { name: "fixture", payload: { value: "synthetic" } }, key: "explicit-key" },
+    { payload: { fact: "fixture", category: "test" }, key: "host-key" },
+  ]);
+  assert.deepEqual(createCodebaseTools(client), []);
+});
+
+
+test("legacy SDK write responses retain uncertainty after upstream dispatch", async () => {
+  const tools = createWorkItemTools(clientWithRaw({ claimWorkItem: async () => ({ statusCode: 503, error: "response interrupted" }) }));
+  const claim = tools.find((tool) => tool.name === "exf_work_item_claim")!;
+  assert.equal((await claim.handler({ claimOwner: "fixture" })).executionOutcome, "unknown");
 });

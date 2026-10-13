@@ -42,6 +42,20 @@ import {
   formatValidationErrors,
 } from "../src/framework/validate.js";
 import type { InputSchema } from "../src/framework/types.js";
+import type { ToolExecutionReceipt } from "../src/framework/execution-types.js";
+import type { RunToolEffects } from "../src/framework/runs.js";
+
+function legacyEffectShape(effects: RunToolEffects | undefined) {
+  assert.ok(effects);
+  const ids = effects.receipts.map((receipt) => {
+    assert.equal(typeof receipt.executionReceiptId, "string");
+    assert.match(receipt.executionReceiptId!, /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/);
+    assert.deepEqual(receipt.verificationRefs, []);
+    return receipt.executionReceiptId;
+  });
+  assert.equal(new Set(ids).size, effects.receipts.length);
+  return { ...effects, receipts: effects.receipts.map(({ executionReceiptId, verificationRefs, ...receipt }) => receipt) };
+}
 
 // ── Resolve .data dir for cleanup ─────────────────────────────────────────
 const __filename = fileURLToPath(import.meta.url);
@@ -1090,6 +1104,8 @@ test("openclaw bridge: execute() runs the tool and wraps the result", async () =
   assert.equal(result.isError, undefined);
   assert.equal(result.content.length, 1);
   assert.equal(result.content[0].type, "text");
+  assert.equal(result.content[0].type, "text");
+  if (result.content[0].type !== "text") throw new Error("Expected text content");
   assert.match(result.content[0].text, /calculated/);
   assert.match(result.content[0].text, /"doubled": 42/);
 });
@@ -1109,6 +1125,7 @@ test("openclaw bridge: failed tool returns error block with isError", async () =
   const result = await tool.execute("call_1", {});
   assert.equal(result.type, "error");
   assert.equal(result.isError, true);
+  if (result.content[0].type !== "text") throw new Error("Expected text content");
   assert.match(result.content[0].text, /boom/);
 });
 
@@ -1131,6 +1148,7 @@ test("openclaw bridge: validation errors flow through as error blocks", async ()
   // Missing required param — registry.execute should refuse before the handler.
   const result = await tool.execute("call_1", {});
   assert.equal(result.isError, true);
+  if (result.content[0].type !== "text") throw new Error("Expected text content");
   assert.match(result.content[0].text, /field/i);
 });
 
@@ -1193,6 +1211,7 @@ test("openclaw bridge: custom formatResult is honored", async () => {
     }),
   });
   const result = await tool.execute("c1", {});
+  if (result.content[0].type !== "text") throw new Error("Expected text content");
   assert.equal(result.content[0].text, 'OK: {"stamped":true}');
 });
 
@@ -1207,6 +1226,7 @@ test("openclaw bridge: toolToOpenclaw works on a single tool", async () => {
   r.register(t);
   const oc = toolToOpenclaw(t, r);
   const result = await oc.execute("c1", {});
+  if (result.content[0].type !== "text") throw new Error("Expected text content");
   assert.match(result.content[0].text, /alone/);
 });
 
@@ -1315,6 +1335,8 @@ test("pi bridge: executes successes and throws failures", async () => {
 
   const [tool] = toPiTools(r);
   const result = await tool.execute("call-3", { text: "hello" }, undefined, undefined, {});
+  assert.equal(result.content[0].type, "text");
+  if (result.content[0].type !== "text") throw new Error("Expected text content");
   assert.match(result.content[0].text, /hello/);
   assert.equal(result.details.success, true);
   await assert.rejects(
@@ -1325,19 +1347,33 @@ test("pi bridge: executes successes and throws failures", async () => {
 
 test("pi bridge: honors an already-aborted signal", async () => {
   const r = new ToolRegistry();
+  let effects = 0;
   r.register(
     defineTool({
       name: "slow_tool",
       description: "a cancellable test tool",
       inputSchema: { type: "object", properties: {} },
-      handler: async () => ok({ completed: true }),
+      handler: async () => { effects += 1; return ok({ completed: true }); },
     }),
   );
   const [tool] = toPiTools(r);
   await assert.rejects(
     tool.execute("call-5", {}, AbortSignal.abort(), undefined, {}),
-    /abort/i,
+    (error: unknown) => {
+      assert.ok(error instanceof Error);
+      assert.match(error.message, /abort|cancelled/i);
+      const receipt = (error as Error & { executionReceipt: ToolExecutionReceipt }).executionReceipt;
+      assert.equal(receipt.callId, "call-5");
+      assert.equal(receipt.phase, "not_started");
+      assert.equal(receipt.admission, "rejected");
+      assert.equal(receipt.executionOutcome, "failed");
+      assert.equal(receipt.startedAt, undefined);
+      assert.equal(receipt.cancellationObserved, true);
+      assert.ok(receipt.reasonCodes.includes("cancelled_before_start"));
+      return true;
+    },
   );
+  assert.equal(effects, 0);
 });
 
 test("hermes bridge: builds a least-privilege MCP config snapshot", () => {
@@ -2443,6 +2479,7 @@ test("agent and workflow loops stop on the JSON-normalized unknown tool outcome"
       });
       await assert.rejects(agent.run("run it", adapter, registry), (error: unknown) => {
         assert.ok(error instanceof RunExecutionError);
+        legacyEffectShape(error.toolEffects);
         assert.equal(error.toolEffects?.certainty, "unknown");
         assert.equal(
           error.toolEffects?.receipts[0]?.result.executionOutcome,
@@ -2458,7 +2495,7 @@ test("agent and workflow loops stop on the JSON-normalized unknown tool outcome"
           assert.match(error.message, /outcome is unknown/i);
           assert.equal(error.run.status, "failed");
           assert.equal(error.run.stopReason, "error");
-          assert.deepEqual(error.toolEffects, {
+          assert.deepEqual(legacyEffectShape(error.toolEffects), {
             state: "partial",
             certainty: "unknown",
             receipts: [{
@@ -2525,7 +2562,7 @@ test("workflow LLM step preserves ordered known receipts when a later adapter ca
       assert.match(error.message, /adapter failed after known effects/);
       assert.equal(error.run.status, "failed");
       assert.equal(error.run.stopReason, "error");
-      assert.deepEqual(error.toolEffects, {
+      assert.deepEqual(legacyEffectShape(error.toolEffects), {
         state: "partial",
         certainty: "known",
         receipts: [
@@ -2603,7 +2640,7 @@ test("workflow LLM step reports five-round exhaustion with every committed effec
       assert.equal(error.run.error, undefined);
       assert.equal(typeof error.run.completedAt, "string");
       assert.equal(error.cause, undefined);
-      assert.deepEqual(error.toolEffects, {
+      assert.deepEqual(legacyEffectShape(error.toolEffects), {
         state: "partial",
         certainty: "known",
         receipts: Array.from({ length: 5 }, (_, index) => ({

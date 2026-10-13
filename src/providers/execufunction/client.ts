@@ -244,18 +244,14 @@ export class ExfClient {
 
   // ─── Codebase ───────────────────────────────────────────────────────────
 
-  async searchCode(query: string, repositoryId?: string) {
-    return unwrap(
-      await this.sift.searchCode({ query, repositoryId }),
-      "searchCode",
-    );
+  /** @deprecated Hosted source indexing/search has been retired by Siftable. */
+  async searchCode(_query: string, _repositoryId?: string): Promise<{ results: Record<string, unknown>[] }> {
+    throw new Error("Siftable hosted source search is retired. Use local rg or git grep in an authorized checkout; curated code_memory tools remain available.");
   }
 
-  async codeWhoKnows(repositoryId: string, area: string) {
-    return unwrap(
-      await this.sift.whoKnows(repositoryId, area),
-      "whoKnows",
-    );
+  /** @deprecated Hosted source ownership lookup has been retired by Siftable. */
+  async codeWhoKnows(_repositoryId: string, _area: string): Promise<unknown> {
+    throw new Error("Siftable hosted source ownership lookup is retired. Use authorized local repository history instead.");
   }
 
   // ─── Health ─────────────────────────────────────────────────────────────

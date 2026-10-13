@@ -8,6 +8,7 @@ dist/
 !.env.example
 .DS_Store
 .data/
+.host-fixtures/
 
 # OpenMemory - IDE/Assistant specific rules
 .windsurf/rules/openmemory.md

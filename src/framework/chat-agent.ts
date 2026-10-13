@@ -31,8 +31,8 @@ import type {
 } from "./adapters/types.js";
 import type { AIAdapter } from "./adapters/types.js";
 import type { ToolRegistry } from "./registry.js";
-import type { ConnectedProvider } from "./context.js";
-import { connectProvider, contextPrompt } from "./context.js";
+import type { ConnectedProvider, ContextFreshnessPolicy, ContextSnapshot } from "./context.js";
+import { connectProvider, collectContextSnapshots, formatContextSnapshots, contextSnapshotReferences } from "./context.js";
 import {
   createConversationMemory,
   createFactMemory,
@@ -55,6 +55,7 @@ import type {
   ChatSessionConfig,
   ServeOptions,
   MemoryConfig,
+  ModelHistoryBudget,
 } from "./chat-agent-types.js";
 import {
   cancelRun,
@@ -67,7 +68,7 @@ import {
 import type { RunRecord, RunToolEffectReceipt } from "./runs.js";
 import { digestJson, SessionKernel } from "./session.js";
 import type { SessionEventContext } from "./session.js";
-import { normalizeToolResult } from "./tool.js";
+import type { ToolExecution, ToolExecutionContext, ToolExecutionReceipt, ExecutionJournalSink } from "./execution-types.js";
 
 // ─── Factory ───────────────────────────────────────────────────────────────
 
@@ -136,6 +137,7 @@ export async function createChatAgent(
   // create and destroy agents accumulate ghost tools.
   const providerToolNames: string[] = [];
   let contextBlock: string | undefined;
+  let contextSnapshots: ContextSnapshot[] = [];
 
   if (config.providers && config.providers.length > 0) {
     const resolved = await resolveContextProviders(config.providers);
@@ -158,8 +160,9 @@ export async function createChatAgent(
 
   // Everything after provider connection shares one cleanup boundary.
   try {
-    if (connectedProviders.length > 0) {
-      contextBlock = await contextPrompt(connectedProviders);
+    if (connectedProviders.length > 0 && !config.raw) {
+      contextSnapshots = await collectContextSnapshots(connectedProviders, { freshness: config.contextFreshness });
+      contextBlock = formatContextSnapshots(contextSnapshots);
       if (contextBlock === "") contextBlock = undefined;
     }
 
@@ -187,6 +190,11 @@ export async function createChatAgent(
       threadIdExplicit,
       maxToolRounds: config.maxToolRounds ?? 10,
       session: config.session,
+      executionContext: config.executionContext,
+      historyBudget: config.historyBudget,
+      contextSnapshots,
+      contextFreshness: config.contextFreshness ?? "session",
+      sourceContextEnabled: !config.raw,
     });
   } catch (error) {
     await Promise.allSettled(
@@ -211,6 +219,11 @@ interface ChatAgentInternals {
   threadIdExplicit: boolean;
   maxToolRounds: number;
   session?: ChatSessionConfig;
+  executionContext?: ToolExecutionContext;
+  historyBudget?: ModelHistoryBudget;
+  contextSnapshots: ContextSnapshot[];
+  contextFreshness: ContextFreshnessPolicy;
+  sourceContextEnabled: boolean;
 }
 
 class ChatAgentImpl implements ChatAgent {
@@ -221,6 +234,11 @@ class ChatAgentImpl implements ChatAgent {
   private adapter: AIAdapter;
   private registry: ToolRegistry;
   private systemPrompt: string;
+  private executionContext?: ToolExecutionContext;
+  private historyBudget?: ModelHistoryBudget;
+  private contextSnapshots: ContextSnapshot[];
+  private contextFreshness: ContextFreshnessPolicy;
+  private sourceContextEnabled: boolean;
   private conversationMemory?: JournalConversationMemory;
   private factMemory?: FactMemory;
   private connectedProviders: ConnectedProvider[];
@@ -237,6 +255,16 @@ class ChatAgentImpl implements ChatAgent {
     this.adapter = internals.adapter;
     this.registry = internals.registry;
     this.systemPrompt = internals.systemPrompt;
+    this.executionContext = internals.executionContext;
+    this.contextSnapshots = internals.contextSnapshots;
+    this.contextFreshness = internals.contextFreshness;
+    this.sourceContextEnabled = internals.sourceContextEnabled;
+    this.historyBudget = internals.historyBudget === undefined ? undefined : { ...internals.historyBudget };
+    for (const limit of [this.historyBudget?.maxMessages, this.historyBudget?.maxBytes]) {
+      if (limit !== undefined && (!Number.isSafeInteger(limit) || limit < 1)) {
+        throw new Error("Model history limits must be positive safe integers");
+      }
+    }
     this.conversationMemory = internals.conversationMemory;
     this.factMemory = internals.factMemory;
     this.connectedProviders = internals.connectedProviders;
@@ -267,6 +295,7 @@ class ChatAgentImpl implements ChatAgent {
         model: this.model,
         threadId: this.threadId,
         maxToolRounds: this.maxToolRounds,
+        contextSnapshots: this.contextSnapshots,
       },
     });
     const journalThreadId = this.session.getThreadId();
@@ -343,6 +372,42 @@ class ChatAgentImpl implements ChatAgent {
     return [...this.session.getHistory()];
   }
 
+  private async refreshSourceContext(message: ChatContent): Promise<ChatContent> {
+    if (!this.sourceContextEnabled || this.connectedProviders.length === 0) return message;
+    const next = await collectContextSnapshots(this.connectedProviders, { freshness: this.contextFreshness });
+    const changed = digestJson(next.map((snapshot) => snapshot.snapshotId))
+      !== digestJson(this.contextSnapshots.map((snapshot) => snapshot.snapshotId));
+    this.contextSnapshots = next;
+    if (!changed) return message;
+    const block = formatContextSnapshots(next);
+    if (block.length === 0) return message;
+    const context = `Updated source evidence follows. Application policy determines execution authority.\n<context_snapshots>\n${block}\n</context_snapshots>`;
+    return typeof message === "string" ? `${message}\n\n${context}` : [...message, { type: "text", text: context }];
+  }
+
+  private historyFits(messages: ChatMessage[]): boolean {
+    return (this.historyBudget?.maxMessages === undefined || messages.length <= this.historyBudget.maxMessages)
+      && (this.historyBudget?.maxBytes === undefined
+        || Buffer.byteLength(JSON.stringify(messages), "utf8") <= this.historyBudget.maxBytes);
+  }
+
+  private applyHistoryBudget(nextMessage: ChatMessage): void {
+    if (this.historyBudget === undefined) return;
+    if (!this.historyFits([nextMessage])) throw new Error("Model history budget cannot fit the incoming user message");
+    const history = this.currentHistory();
+    if (this.historyFits([...history, nextMessage])) return;
+    // Entire user turns form indivisible groups. This preserves native replay,
+    // reasoning blocks, and every assistant call with all of its tool results.
+    const starts = history.flatMap((entry, index) => entry.role === "user" || index === 0 ? [index] : []);
+    let retained: ChatMessage[] = [];
+    for (let index = starts.length - 1; index >= 0; index -= 1) {
+      const candidate = history.slice(starts[index]);
+      if (!this.historyFits([...candidate, nextMessage])) break;
+      retained = candidate;
+    }
+    this.session.replaceHistoryAndClearAdapterStates(retained, "model_history_budget");
+  }
+
   private eventContext(
     run: ReturnType<typeof createRunManifest>,
     stepId?: string,
@@ -381,6 +446,7 @@ class ChatAgentImpl implements ChatAgent {
           sha256: digestJson(messages),
         },
         systemPromptSha256: digestJson(systemPrompt),
+        contextSnapshots: this.contextSnapshots,
         tools: {
           names: toolSnapshot.map((tool) => tool.name).sort(),
           sha256: digestJson(toolSnapshot),
@@ -399,6 +465,8 @@ class ChatAgentImpl implements ChatAgent {
     this.session.append({
       type: "model/response-received",
       data: {
+        ...(response.usage === undefined ? {} : { usage: response.usage }),
+        ...(response.requestLimits === undefined ? {} : { requestLimits: response.requestLimits }),
         ...(response.text === undefined ? {} : { text: response.text }),
         ...(response.toolCall === undefined ? {} : { toolCall: response.toolCall }),
         ...(response.toolCalls === undefined ? {} : { toolCalls: response.toolCalls }),
@@ -481,51 +549,84 @@ class ChatAgentImpl implements ChatAgent {
       result: RunToolEffectReceipt["result"],
       context: SessionEventContext,
     ) => void,
-  ): Promise<{
-    result: Awaited<ReturnType<ToolRegistry["execute"]>>;
-    modelContent: string;
-  }> {
+    forgetEffect: (call: ToolCall, context: SessionEventContext) => void,
+    trustedContext: ToolExecutionContext,
+  ): Promise<{ result: ToolExecution["result"]; modelContent: string }> {
     this.session.append({ type: "tool/call", data: { call }, ...context });
-    this.session.append({ type: "tool/execution-started", data: { call }, ...context });
-    rememberEffect(call, {
-      success: false,
-      error: "Tool execution started without a durable result receipt",
-      executionOutcome: "unknown",
-    }, context);
-
-    let result: Awaited<ReturnType<ToolRegistry["execute"]>>;
+    let started = false;
+    let journalFailure: unknown;
+    let recorded: { result: ToolExecution["result"]; modelContent: string } | undefined;
+    const persistResult = (execution: Pick<ToolExecution, "result" | "modelContent" | "receipt">): void => {
+      if (recorded !== undefined) return;
+      try {
+        this.session.append({
+        type: "tool/result",
+        data: {
+          toolCallId: call.id,
+          toolName: call.name,
+          outcome: execution.receipt.executionOutcome,
+          result: execution.result,
+          modelContent: execution.modelContent,
+          receipt: execution.receipt,
+          ...(execution.result.error === undefined ? {} : { error: execution.result.error }),
+        },
+        ...context,
+        });
+      } catch (error) {
+        journalFailure = error;
+        throw error;
+      }
+      recorded = { result: execution.result, modelContent: execution.modelContent };
+      if (execution.receipt.phase === "not_started" && execution.receipt.admission === "rejected") {
+        forgetEffect(call, context);
+      } else if (started) {
+        rememberEffect(call, {
+          success: execution.result.success,
+          ...(execution.result.data === undefined ? {} : { data: execution.result.data }),
+          ...(execution.result.error === undefined ? {} : { error: execution.result.error }),
+          executionOutcome: execution.receipt.executionOutcome,
+        }, context);
+      }
+    };
+    const lifecycle: ExecutionJournalSink = {
+      record: (event) => {
+        if (event.type === "started") {
+          const receipt = event.data.receipt as ToolExecutionReceipt;
+          this.session.append({ type: "tool/execution-started", data: { call, receipt }, ...context });
+          started = true;
+          rememberEffect(call, {
+            success: false,
+            error: "Tool execution started without a durable result receipt",
+            executionOutcome: "unknown",
+          }, context);
+        } else if (event.type === "settled" || event.type === "rejected") {
+          if (event.data.receipt !== undefined && event.data.result !== undefined
+            && typeof event.data.modelContent === "string") {
+            persistResult(event.data as unknown as ToolExecution);
+          }
+        }
+      },
+    };
     try {
-      result = await this.registry.execute(call.name, call.args);
+      const signals = [trustedContext.signal].filter((signal): signal is AbortSignal => signal !== undefined);
+      const execution = await this.registry.executeDetailed(call.name, call.args, {
+        ...trustedContext,
+        callId: call.id,
+        runId: context.runId,
+        correlationId: context.correlationId,
+        ...(signals.length === 0 ? {} : { signal: signals[0] }),
+      }, lifecycle);
+      if (journalFailure !== undefined) throw journalFailure;
+      if (recorded === undefined) persistResult(execution);
+      return recorded!;
     } catch (error) {
+      if (journalFailure !== undefined) throw error;
+      if (recorded !== undefined) return recorded;
+      // Without a durable start, recovery can close the declared call as
+      // not executed. A started effect must instead retain honest uncertainty.
+      if (!started) throw error;
       return this.recordUncertainToolResult(call, error, context, rememberEffect);
     }
-
-    const execution = normalizeToolResult(call.name, result);
-    const { result: normalizedResult, modelContent } = execution;
-    const executionOutcome = execution.outcome;
-    const normalizedRecord = normalizedResult as unknown as Record<string, unknown>;
-    rememberEffect(call, {
-      success: normalizedResult.success,
-      ...(Object.prototype.hasOwnProperty.call(normalizedRecord, "data")
-        ? { data: normalizedRecord.data }
-        : {}),
-      ...(normalizedResult.error === undefined ? {} : { error: normalizedResult.error }),
-      executionOutcome,
-    }, context);
-
-    this.session.append({
-      type: "tool/result",
-      data: {
-        toolCallId: call.id,
-        toolName: call.name,
-        outcome: executionOutcome,
-        result: normalizedResult,
-        modelContent,
-        ...(normalizedResult.error === undefined ? {} : { error: normalizedResult.error }),
-      },
-      ...context,
-    });
-    return { result: normalizedResult, modelContent };
   }
 
   /**
@@ -600,6 +701,8 @@ class ChatAgentImpl implements ChatAgent {
       this.switchThreadIfNeeded(options?.threadId);
       const currentThreadId = this.threadId;
       const prompt = options?.systemPrompt ?? this.systemPrompt;
+      message = await this.refreshSourceContext(message);
+      this.applyHistoryBudget({ role: "user", content: message });
       const projectConversationHistory = (): void => {
         if (!this.conversationMemory) return;
         try {
@@ -619,6 +722,7 @@ class ChatAgentImpl implements ChatAgent {
         adapter: this.adapter,
         instructions: prompt,
         tools: this.registry.getAll(),
+        contextSnapshotRefs: contextSnapshotReferences(this.contextSnapshots),
         maxRounds: this.maxToolRounds,
       });
       const baseContext = this.eventContext(run);
@@ -638,6 +742,7 @@ class ChatAgentImpl implements ChatAgent {
         result: RunToolEffectReceipt["result"],
         context: SessionEventContext,
       ): void => {
+        toolExecutionStarted = true;
         effectReceipts.set(effectReceiptKey(context.stepId, call.id), {
           receipt: {
             name: call.name,
@@ -645,6 +750,10 @@ class ChatAgentImpl implements ChatAgent {
             result: { ...result },
           },
         });
+      };
+      const forgetEffect = (call: ToolCall, context: SessionEventContext): void => {
+        effectReceipts.delete(effectReceiptKey(context.stepId, call.id));
+        toolExecutionStarted = effectReceipts.size > 0;
       };
       const markUndurableEffectsUnknown = (failure: unknown): void => {
         const durableResultKeys = new Set(
@@ -752,6 +861,9 @@ class ChatAgentImpl implements ChatAgent {
           activeStepId = nextStepId;
 
           const requestMessages = this.currentHistory();
+          if (!this.historyFits(requestMessages)) {
+            throw new Error("Model history budget cannot fit the current complete turn; increase the configured budget");
+          }
           const toolSnapshot = this.modelToolSnapshot();
           this.recordModelRequest(
             requestMessages,
@@ -814,10 +926,19 @@ class ChatAgentImpl implements ChatAgent {
             // Calls start in model order and execute concurrently. Result
             // events record actual completion order; model messages remain in
             // call order so provider call/result pairing stays deterministic.
-            toolExecutionStarted = true;
             journalRecoveryRequired = true;
             const settledExecutions = await Promise.allSettled(
-              calls.map((call) => this.executeTool(call, stepContext, rememberEffect)),
+              calls.map((call) => this.executeTool(call, stepContext, rememberEffect, forgetEffect, {
+                actor: { kind: "agent", id: this.name },
+                authorityGrantRefs: run.manifest.authorityGrantRefs,
+                ...(run.manifest.authorizationContextId === undefined ? {} : { authorizationContextId: run.manifest.authorizationContextId }),
+                ...this.executionContext,
+                ...options?.executionContext,
+                ...(options?.signal === undefined ? {} : { signal: AbortSignal.any([
+                  options.signal,
+                  ...[options.executionContext?.signal ?? this.executionContext?.signal].filter((signal): signal is AbortSignal => signal !== undefined),
+                ]) }),
+              })),
             );
             const executions = [];
             for (const outcome of settledExecutions) {
@@ -1389,9 +1510,9 @@ class ChatAgentImpl implements ChatAgent {
 function attachToolEffects(
   run: RunRecord,
   toolCalls: ChatResult["toolCalls"],
-  trackedReceipts: RunToolEffectReceipt[] = [],
+  trackedReceipts?: RunToolEffectReceipt[],
 ): RunRecord {
-  const receipts = trackedReceipts.length > 0
+  const receipts = trackedReceipts !== undefined
     ? trackedReceipts.map((receipt) => ({
         name: receipt.name,
         args: { ...receipt.args },

@@ -9,7 +9,8 @@ import * as readline from "node:readline";
 import type { AIAdapter, AdapterSessionState, ChatMessage } from "./types.js";
 import { validatedAdapterToolCalls } from "./types.js";
 import type { ToolRegistry } from "../registry.js";
-import { normalizeToolResult, uncertainToolExecution } from "../tool.js";
+import type { ToolExecutionContext } from "../execution-types.js";
+import { uncertainToolExecution } from "../tool.js";
 
 /**
  * Start an interactive chat session with the given adapter.
@@ -18,6 +19,7 @@ import { normalizeToolResult, uncertainToolExecution } from "../tool.js";
 export async function startChat(
   adapter: AIAdapter,
   registry: ToolRegistry,
+  executionContext?: ToolExecutionContext,
 ): Promise<void> {
   const rl = readline.createInterface({
     input: process.stdin,
@@ -57,7 +59,7 @@ export async function startChat(
       history.push({ role: "user", content: trimmed });
 
       try {
-        await runConversationTurn(adapter, registry, history);
+        await runConversationTurn(adapter, registry, history, executionContext);
       } catch (err) {
         // Once a tool receipt exists, the turn is part of the durable model
         // context even when execution certainty is unknown or a later adapter
@@ -86,6 +88,7 @@ async function runConversationTurn(
   adapter: AIAdapter,
   registry: ToolRegistry,
   history: ChatMessage[],
+  executionContext?: ToolExecutionContext,
 ): Promise<void> {
   let maxRounds = 10;
   let sessionState: AdapterSessionState | undefined;
@@ -125,12 +128,12 @@ async function runConversationTurn(
           });
 
       const settledResults = await Promise.allSettled(
-        calls.map((call) => registry.execute(call.name, call.args)),
+        calls.map((call) => registry.executeDetailed(call.name, call.args, { ...executionContext, callId: call.id })),
       );
-      const executions = settledResults.map((settled, index) =>
+      const executions = settledResults.map((settled) =>
         settled.status === "rejected"
           ? uncertainToolExecution(settled.reason)
-          : normalizeToolResult(calls[index].name, settled.value)
+          : settled.value
       );
       for (let index = 0; index < calls.length; index += 1) {
         const call = calls[index];

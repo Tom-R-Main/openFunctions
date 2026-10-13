@@ -1,227 +1,218 @@
-/**
- * OpenFunction — Parameter Validator
- *
- * Validates tool inputs against the JSON Schema defined in inputSchema
- * before the handler runs. Catches type mismatches, missing required
- * fields, and invalid enum values with clear error messages.
- *
- * This runs automatically on every tool call — students don't need
- * to add validation logic to their handlers.
- */
-
-import type { InputSchema, JsonSchemaProperty } from "./types.js";
+/** JSON Schema admission validation. Validators never mutate caller inputs. */
+import { createHash } from "node:crypto";
+import { Ajv, type ErrorObject, type Options, type ValidateFunction } from "ajv";
+import { Ajv2020 } from "ajv/dist/2020.js";
+import formatsPlugin from "ajv-formats";
+import type { InputSchema } from "./types.js";
 
 export interface ValidationError {
   field: string;
   message: string;
 }
 
-/**
- * Validate parameters against an inputSchema.
- * Returns an array of errors (empty = valid).
- */
-export function validateParams(
-  params: Record<string, unknown>,
-  schema: InputSchema,
-): ValidationError[] {
-  const errors: ValidationError[] = [];
-  const required = new Set(schema.required ?? []);
+const options: Options = {
+  allErrors: true,
+  strictSchema: true,
+  strictNumbers: true,
+  strictTypes: false,
+  strictTuples: false,
+  strictRequired: false,
+  allowUnionTypes: true,
+  coerceTypes: false,
+  useDefaults: false,
+  removeAdditional: false,
+  validateFormats: true,
+  addUsedSchema: false,
+  ownProperties: true,
+  logger: false,
+};
+const draft07 = new Ajv(options);
+const draft2020 = new Ajv2020(options);
+// Node's ESM/CJS interop exposes the plugin's callable default at runtime.
+const addFormats = formatsPlugin as unknown as typeof import("ajv-formats").default;
+addFormats(draft07);
+addFormats(draft2020);
+const cache = new Map<string, ValidateFunction>();
+const CACHE_LIMIT = 128;
 
-  // Check required fields
-  for (const field of required) {
-    if (params[field] === undefined) {
-      const prop = schema.properties[field];
-      const desc = prop?.description ? ` (${prop.description})` : "";
-      errors.push({
-        field,
-        message: `Required parameter "${field}" is missing${desc}`,
-      });
-    }
+/** Deterministic JSON encoding also rejects invalid schema values and cycles. */
+function canonicalJson(value: unknown, parents = new Set<object>()): string {
+  if (value === null || typeof value === "string" || typeof value === "boolean") {
+    return JSON.stringify(value);
   }
-
-  // Check types and constraints for provided fields
-  for (const [key, value] of Object.entries(params)) {
-    if (value === undefined) continue;
-
-    const prop = schema.properties[key];
-    if (!prop) {
-      if (schema.additionalProperties === false) {
-        errors.push({ field: key, message: `Unexpected parameter "${key}"` });
-      } else if (schema.additionalProperties && typeof schema.additionalProperties === "object") {
-        errors.push(...validateField(key, value, schema.additionalProperties));
-      }
-      continue;
-    }
-
-    const fieldErrors = validateField(key, value, prop);
-    errors.push(...fieldErrors);
+  if (typeof value === "number" && Number.isFinite(value)) return JSON.stringify(value);
+  if (typeof value !== "object" || value === null || parents.has(value)) {
+    throw new Error("Non-JSON value");
   }
-
-  return errors;
+  const prototype = Object.getPrototypeOf(value);
+  if (!Array.isArray(value) && prototype !== Object.prototype && prototype !== null) {
+    throw new Error("Non-JSON object");
+  }
+  parents.add(value);
+  try {
+    if (Array.isArray(value)) {
+      const entries = Array.from(value, (entry) => canonicalJson(entry, parents));
+      return `[${entries.join(",")}]`;
+    }
+    return `{${Object.keys(value).sort().map((key) =>
+      `${JSON.stringify(key)}:${canonicalJson((value as Record<string, unknown>)[key], parents)}`,
+    ).join(",")}}`;
+  } finally {
+    parents.delete(value);
+  }
 }
 
-/**
- * Validate a single field against its schema property.
- */
-function validateField(
-  name: string,
-  value: unknown,
-  schema: JsonSchemaProperty,
-): ValidationError[] {
-  const errors: ValidationError[] = [];
+function dialectOf(schema: InputSchema): "draft07" | "2020-12" | undefined {
+  if (schema.$schema === undefined) return "draft07";
+  const uri = schema.$schema.endsWith("#") ? schema.$schema.slice(0, -1) : schema.$schema;
+  if (uri === "http://json-schema.org/draft-07/schema") return "draft07";
+  if (uri === "https://json-schema.org/draft/2020-12/schema") return "2020-12";
+  return undefined;
+}
 
-  if (schema.anyOf && schema.anyOf.some((candidate) => validateField(name, value, candidate).length === 0)) {
-    return errors;
-  }
-  if (schema.anyOf) {
-    return [{ field: name, message: `"${name}" does not match any allowed schema` }];
-  }
-
-  if (schema.oneOf) {
-    const matches = schema.oneOf.filter((candidate) => validateField(name, value, candidate).length === 0);
-    if (matches.length === 1) return errors;
-    return [{ field: name, message: `"${name}" must match exactly one allowed schema` }];
-  }
-
-  if (schema.allOf) {
-    for (const candidate of schema.allOf) {
-      errors.push(...validateField(name, value, candidate));
+/** Check annotations Ajv recognizes but cannot enforce as application contracts. */
+function checkSchemaContracts(schema: unknown): void {
+  if (schema === null || typeof schema !== "object" || Array.isArray(schema)) return;
+  const object = schema as Record<string, unknown>;
+  if (object.$async !== undefined) throw new Error("Async schemas are unsupported");
+  if (object.$vocabulary && typeof object.$vocabulary === "object") {
+    const supported = new Set([
+      "https://json-schema.org/draft/2020-12/vocab/core",
+      "https://json-schema.org/draft/2020-12/vocab/applicator",
+      "https://json-schema.org/draft/2020-12/vocab/unevaluated",
+      "https://json-schema.org/draft/2020-12/vocab/validation",
+      "https://json-schema.org/draft/2020-12/vocab/meta-data",
+      "https://json-schema.org/draft/2020-12/vocab/format-annotation",
+      "https://json-schema.org/draft/2020-12/vocab/format-assertion",
+      "https://json-schema.org/draft/2020-12/vocab/content",
+    ]);
+    for (const [uri, required] of Object.entries(object.$vocabulary)) {
+      if (required === true && !supported.has(uri)) throw new Error("Unsupported required vocabulary");
     }
-    if (errors.length > 0) return errors;
   }
-
-  if ("const" in schema && !Object.is(value, schema.const)) {
-    errors.push({
-      field: name,
-      message: `"${name}" must equal ${JSON.stringify(schema.const)}`,
-    });
-    return errors;
+  // Descend through schema locations only; enum/const/default are data and
+  // may legitimately contain fields named $async, $ref, or $vocabulary.
+  for (const key of ["$defs", "definitions", "properties", "patternProperties", "dependentSchemas", "dependencies"]) {
+    const entries = object[key];
+    if (entries !== null && typeof entries === "object") {
+      for (const child of Object.values(entries)) checkSchemaContracts(child);
+    }
   }
+  for (const key of ["items", "prefixItems", "anyOf", "oneOf", "allOf", "additionalItems", "contains", "unevaluatedItems", "propertyNames", "additionalProperties", "unevaluatedProperties", "not", "if", "then", "else"]) {
+    const child = object[key];
+    if (Array.isArray(child)) child.forEach(checkSchemaContracts);
+    else checkSchemaContracts(child);
+  }
+}
 
-  // Type check
-  const actualType = getJsonSchemaType(value);
-  const allowedTypes = schema.type
-    ? (Array.isArray(schema.type) ? schema.type : [schema.type])
-    : [];
-  if (allowedTypes.length > 0 && !allowedTypes.includes(actualType as never)) {
-    // Allow integer where number is expected
-    if (allowedTypes.includes("number") && actualType === "integer") {
-      // Fine — integers are valid numbers
-    } else if (allowedTypes.includes("integer") && actualType === "number") {
-      // Check if it's actually an integer
-      if (!Number.isInteger(value)) {
-        errors.push({
-          field: name,
-          message: `"${name}" must be an integer, got ${value}`,
-        });
-      }
+function pointerTokens(pointer: string): string[] {
+  return pointer.split("/").slice(1).map((part) => part.replace(/~1/g, "/").replace(/~0/g, "~"));
+}
+
+/** Identifier paths remain readable; other property names are escaped literals. */
+function fieldPath(tokens: string[], params: unknown): string {
+  let current = params;
+  let field = "";
+  for (const token of tokens) {
+    if (Array.isArray(current) && /^(0|[1-9][0-9]*)$/.test(token)) field += `[${token}]`;
+    else if (/^[A-Za-z_$][A-Za-z0-9_$]*$/.test(token)) field += `${field ? "." : ""}${token}`;
+    else field += `[${JSON.stringify(token)}]`;
+    current = current !== null && typeof current === "object"
+      ? (current as Record<string, unknown>)[token] : undefined;
+  }
+  return field || "$";
+}
+
+function schemaAt(schema: InputSchema, pointer: string): Record<string, unknown> | undefined {
+  let current: unknown = schema;
+  for (const token of pointerTokens(pointer.replace(/^#/, ""))) {
+    current = current !== null && typeof current === "object"
+      ? (current as Record<string, unknown>)[token] : undefined;
+  }
+  return current !== null && typeof current === "object" ? current as Record<string, unknown> : undefined;
+}
+
+function mapError(error: ErrorObject, params: unknown, schema: InputSchema): ValidationError {
+  const tokens = pointerTokens(error.instancePath);
+  if (error.keyword === "required") tokens.push(String(error.params.missingProperty));
+  if (error.keyword === "additionalProperties") tokens.push(String(error.params.additionalProperty));
+  if (error.keyword === "unevaluatedProperties") tokens.push(String(error.params.unevaluatedProperty));
+  const field = fieldPath(tokens, params);
+  const quoted = JSON.stringify(field);
+  let message: string;
+  switch (error.keyword) {
+    case "required": {
+      const parent = schemaAt(schema, error.schemaPath.slice(0, -"/required".length));
+      const properties = parent?.properties as Record<string, unknown> | undefined;
+      const property = properties?.[String(error.params.missingProperty)] as Record<string, unknown> | undefined;
+      const description = typeof property?.description === "string" ? ` (${property.description})` : "";
+      message = `Required parameter ${quoted} is missing${description}`;
+      break;
+    }
+    case "type":
+      message = `${quoted} must be ${error.params.type === "integer" ? "an integer" : error.params.type}`;
+      break;
+    case "enum": {
+      const allowed = error.params.allowedValues as unknown[];
+      message = `${quoted} must be one of: ${allowed.map((value) => typeof value === "string" ? value : JSON.stringify(value)).join(", ")}`;
+      break;
+    }
+    case "additionalProperties": case "unevaluatedProperties":
+      message = `Unexpected parameter ${quoted}`; break;
+    case "const": message = `${quoted} must equal its declared constant`; break;
+    case "anyOf": message = `${quoted} does not match any allowed schema`; break;
+    case "oneOf": message = `${quoted} must match exactly one allowed schema`; break;
+    default:
+      // Ajv's message describes the constraint, never the failing instance.
+      message = `${quoted} ${error.message ?? "does not satisfy the schema"}`;
+  }
+  return { field, message };
+}
+
+/** Returns all validation errors; invalid/unsupported schemas fail closed. */
+export function validateParams(params: Record<string, unknown>, schema: InputSchema): ValidationError[] {
+  let validate: ValidateFunction;
+  try {
+    const dialect = dialectOf(schema);
+    if (!dialect) return [{ field: "$schema", message: "Unsupported JSON Schema dialect" }];
+    const canonical = canonicalJson(schema);
+    checkSchemaContracts(schema);
+    const key = `${dialect}:${createHash("sha256").update(canonical).digest("hex")}`;
+    const cached = cache.get(key);
+    if (cached) {
+      cache.delete(key);
+      cache.set(key, cached);
+      validate = cached;
     } else {
-      errors.push({
-        field: name,
-        message: `"${name}" must be ${allowedTypes.join(" or ")}, got ${actualType} (${JSON.stringify(value)})`,
-      });
-      return errors; // Skip further checks if type is wrong
+      // Compile a detached canonical schema: Ajv identity caches cannot retain
+      // a stale validator if a caller subsequently edits the original object.
+      const ajv = dialect === "draft07" ? draft07 : draft2020;
+      const detached = JSON.parse(canonical);
+      validate = ajv.compile(detached);
+      ajv.removeSchema(detached);
+      if ("$async" in validate && validate.$async) throw new Error("Asynchronous validation is unsupported");
+      cache.set(key, validate);
+      if (cache.size > CACHE_LIMIT) cache.delete(cache.keys().next().value!);
     }
+  } catch {
+    return [{ field: "$schema", message: "Invalid JSON Schema or unsupported keyword, format, or reference" }];
   }
-
-  // Enum check — JSON Schema enums can hold any primitive (number,
-  // boolean, string), not just strings. Avoid coercing here.
-  if (schema.enum && !schema.enum.some((candidate) => Object.is(candidate, value))) {
-    errors.push({
-      field: name,
-      message: `"${name}" must be one of: ${schema.enum.join(", ")} — got "${value}"`,
-    });
+  try {
+    canonicalJson(params);
+  } catch {
+    return [{ field: "$", message: "Parameters must contain only finite JSON values" }];
   }
-
-  // Array items check
-  if (allowedTypes.includes("array") && Array.isArray(value) && schema.items && !Array.isArray(schema.items)) {
-    for (let i = 0; i < value.length; i++) {
-      const itemErrors = validateField(`${name}[${i}]`, value[i], schema.items);
-      errors.push(...itemErrors);
-    }
-  }
-
-  // Nested object check
-  if (
-    allowedTypes.includes("object") &&
-    typeof value === "object" &&
-    value !== null &&
-    schema.properties
-  ) {
-    const nestedRequired = new Set(schema.required ?? []);
-    const obj = value as Record<string, unknown>;
-
-    for (const field of nestedRequired) {
-      if (obj[field] === undefined) {
-        errors.push({
-          field: `${name}.${field}`,
-          message: `Required field "${name}.${field}" is missing`,
-        });
-      }
-    }
-
-    for (const [key, val] of Object.entries(obj)) {
-      if (val === undefined) continue;
-      const propSchema = schema.properties[key];
-      if (propSchema) {
-        const fieldErrors = validateField(`${name}.${key}`, val, propSchema);
-        errors.push(...fieldErrors);
-      } else if (schema.additionalProperties === false) {
-        errors.push({ field: `${name}.${key}`, message: `Unexpected field "${name}.${key}"` });
-      } else if (schema.additionalProperties && typeof schema.additionalProperties === "object") {
-        errors.push(...validateField(`${name}.${key}`, val, schema.additionalProperties));
-      }
-    }
-  }
-
-  if (typeof value === "string") {
-    if (schema.minLength !== undefined && value.length < schema.minLength) {
-      errors.push({ field: name, message: `"${name}" must contain at least ${schema.minLength} characters` });
-    }
-    if (schema.maxLength !== undefined && value.length > schema.maxLength) {
-      errors.push({ field: name, message: `"${name}" must contain at most ${schema.maxLength} characters` });
-    }
-    if (schema.pattern !== undefined && !new RegExp(schema.pattern).test(value)) {
-      errors.push({ field: name, message: `"${name}" must match ${schema.pattern}` });
-    }
-  }
-
-  if (typeof value === "number") {
-    if (schema.minimum !== undefined && value < schema.minimum) errors.push({ field: name, message: `"${name}" must be at least ${schema.minimum}` });
-    if (schema.maximum !== undefined && value > schema.maximum) errors.push({ field: name, message: `"${name}" must be at most ${schema.maximum}` });
-    if (schema.exclusiveMinimum !== undefined && value <= schema.exclusiveMinimum) errors.push({ field: name, message: `"${name}" must be greater than ${schema.exclusiveMinimum}` });
-    if (schema.exclusiveMaximum !== undefined && value >= schema.exclusiveMaximum) errors.push({ field: name, message: `"${name}" must be less than ${schema.exclusiveMaximum}` });
-  }
-
-  if (Array.isArray(value)) {
-    if (schema.minItems !== undefined && value.length < schema.minItems) errors.push({ field: name, message: `"${name}" must contain at least ${schema.minItems} items` });
-    if (schema.maxItems !== undefined && value.length > schema.maxItems) errors.push({ field: name, message: `"${name}" must contain at most ${schema.maxItems} items` });
-  }
-
-  return errors;
+  if (validate(params)) return [];
+  const errors = validate.errors ?? [];
+  // Report a failed union once instead of printing each alternative's errors.
+  // Sibling constraints retain their own errors and are never short-circuited.
+  const unions = errors.filter((error) => error.keyword === "anyOf" || error.keyword === "oneOf");
+  return errors.filter((error) => !unions.some((union) =>
+    error !== union && error.schemaPath.startsWith(`${union.schemaPath}/`),
+  )).map((error) => mapError(error, params, schema));
 }
 
-/**
- * Map a JS value to its JSON Schema type name.
- */
-function getJsonSchemaType(value: unknown): string {
-  if (Array.isArray(value)) return "array";
-  if (value === null) return "null";
-  const t = typeof value;
-  if (t === "number") return Number.isInteger(value) ? "integer" : "number";
-  return t; // "string", "boolean", "object"
-}
-
-/**
- * Format validation errors into a human-readable string.
- */
-export function formatValidationErrors(
-  toolName: string,
-  errors: ValidationError[],
-): string {
-  const lines = [`Parameter validation failed for "${toolName}":`];
-  for (const err of errors) {
-    lines.push(`  - ${err.message}`);
-  }
-  return lines.join("\n");
+export function formatValidationErrors(toolName: string, errors: ValidationError[]): string {
+  return [`Parameter validation failed for ${JSON.stringify(toolName)}:`,
+    ...errors.map((error) => `  - ${error.message}`)].join("\n");
 }

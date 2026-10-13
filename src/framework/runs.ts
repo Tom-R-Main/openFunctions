@@ -9,6 +9,7 @@
 import { createHash, randomUUID } from "node:crypto";
 import type { AIAdapter } from "./adapters/types.js";
 import type { ToolDefinition } from "./types.js";
+import type { ContextSnapshotReference } from "./context.js";
 import {
   customAdapterSelection,
   type ModelSelection,
@@ -43,6 +44,7 @@ export interface RunEnvironmentRef {
 }
 
 export interface RunManifest {
+  contextSnapshotRefs?: ContextSnapshotReference[];
   schemaVersion: typeof RUN_SCHEMA_VERSION;
   runId: string;
   taskId?: string;
@@ -91,6 +93,8 @@ export interface RunFailure {
 }
 
 export interface RunToolEffectReceipt {
+  executionReceiptId?: string;
+  verificationRefs?: readonly string[];
   name: string;
   args: Record<string, unknown>;
   result: {
@@ -109,6 +113,7 @@ export interface RunToolEffects {
 }
 
 export interface RunRecord {
+  executionReceiptRefs?: readonly string[];
   manifest: RunManifest;
   status: RunStatus;
   startedAt: string;
@@ -208,6 +213,7 @@ export interface GoalTransition {
 }
 
 export interface RunContext {
+  contextSnapshotRefs?: ContextSnapshotReference[];
   runId?: string;
   taskId?: string;
   workItemId?: string;
@@ -304,6 +310,7 @@ export function createRunManifest(input: CreateRunManifestInput): RunRecord {
       correlationId: input.correlationId ?? randomUUID(),
       attempt: input.attempt ?? 1,
       actor: input.actor,
+      ...(input.contextSnapshotRefs === undefined ? {} : { contextSnapshotRefs: structuredClone(input.contextSnapshotRefs) }),
       model,
       instructionsDigest: digestValue(input.instructions),
       ...(input.taskContractVersion !== undefined && {

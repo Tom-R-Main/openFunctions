@@ -1,8 +1,8 @@
 /** Current OpenClaw tool-only plugin reference for openFunctions. */
 
 import { defineToolPlugin } from "openclaw/plugin-sdk/tool-plugin";
-import type { TSchema } from "typebox";
-import { toOpenclawToolPluginTools } from "../../../src/framework/openclaw.js";
+import { Type } from "typebox";
+import { toOpenclawToolPluginTools } from "openfunction/framework/openclaw";
 import { buildSampleRegistry } from "./registry.js";
 
 const definitions = toOpenclawToolPluginTools(buildSampleRegistry());
@@ -18,10 +18,15 @@ export default defineToolPlugin({
         name: definition.name,
         label: definition.label,
         description: definition.description,
-        parameters: definition.parameters as TSchema,
+        parameters: Type.Unsafe(requireSchema(definition.parameters)),
         ...(definition.optional ? { optional: true } : {}),
         execute: (params, config, context) =>
           definition.execute(params, config, context),
       }),
     ),
 });
+
+function requireSchema(schema: unknown): object {
+  if (!schema || typeof schema !== "object") throw new Error("Invalid tool schema");
+  return schema;
+}

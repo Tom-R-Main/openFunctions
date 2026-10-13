@@ -29,13 +29,18 @@ import { TextDecoder } from "node:util";
 
 import type {
   AdapterContinuationRecovery,
+  AdapterUsage,
+  AdapterRequestLimits,
   AdapterReplayPayload,
   AdapterSessionState,
   ChatMessage,
   ToolCall,
 } from "./adapters/types.js";
+import type { ContextSnapshot } from "./context.js";
+import type { ToolExecutionReceipt } from "./execution-types.js";
 
-export const SESSION_EVENT_SCHEMA_VERSION = 1 as const;
+export const SESSION_EVENT_SCHEMA_VERSION = 2 as const;
+export type SessionEventSchemaVersion = 1 | 2;
 
 export type JsonPrimitive = string | number | boolean | null;
 export type JsonValue = JsonPrimitive | JsonObject | JsonValue[];
@@ -65,6 +70,7 @@ export interface ModelRequestSnapshot {
   systemPromptSha256: string;
   tools: ModelToolSnapshotReference;
   options?: unknown;
+  contextSnapshots?: ContextSnapshot[];
   adapter?: {
     name: string;
     model: string;
@@ -72,6 +78,8 @@ export interface ModelRequestSnapshot {
 }
 
 export interface ModelResponseSnapshot {
+  usage?: AdapterUsage;
+  requestLimits?: AdapterRequestLimits;
   text?: string;
   toolCall?: ToolCall;
   toolCalls?: ToolCall[];
@@ -117,10 +125,12 @@ export interface SessionEventDataMap {
   };
   "tool/execution-started": {
     call: ToolCall;
+    receipt?: ToolExecutionReceipt;
   };
   "tool/result": {
     toolCallId: string;
     toolName: string;
+    receipt?: ToolExecutionReceipt;
     outcome: ToolResultOutcome;
     result?: unknown;
     error?: string;
@@ -172,7 +182,7 @@ export interface SessionEventContext {
 }
 
 interface SessionEventEnvelope<K extends SessionEventType> extends SessionEventContext {
-  readonly schemaVersion: typeof SESSION_EVENT_SCHEMA_VERSION;
+  readonly schemaVersion: SessionEventSchemaVersion;
   readonly sessionId: string;
   readonly seq: number;
   readonly eventId: string;
@@ -342,6 +352,11 @@ export class JsonlSessionEventStore implements SessionEventStore {
         );
         if (!createdEventFile && !sameEventFileIdentity(current.identity, openedIdentity)) {
           throw new SessionConcurrencyError(event.sessionId);
+        }
+        if (event.schemaVersion === 2 && current.events.length > 0
+          && current.events.at(-1)?.schemaVersion === 1
+          && current.events.every((prior) => prior.schemaVersion === 1)) {
+          preserveV1Bytes(paths.events, eventFd, this.rootDir);
         }
         if (current.hasTornTail) {
           ftruncateSync(eventFd, current.committedByteLength);
@@ -1437,11 +1452,51 @@ interface ValidationOpenTool {
   argsSha256?: string;
   callRecorded: boolean;
   executionStarted: boolean;
+  executionId?: string;
+  capabilityDigest?: string;
+  executionContextDigest?: string;
   resultModelContent?: string;
   turnId: string;
   stepId: string;
   runId?: string;
   correlationId?: string;
+}
+
+function assertBoundExecutionReceipt(
+  receipt: ToolExecutionReceipt,
+  tool: ValidationOpenTool,
+  callId: string,
+  event: SessionEvent,
+): void {
+  if (!isPlainObject(receipt) || receipt.schemaVersion !== 1) {
+    throw new SessionInvariantError("unsupported execution receipt schema");
+  }
+  assertNonEmptyString(receipt.executionId, "receipt execution id");
+  if (receipt.callId !== callId || receipt.toolName !== tool.name
+    || receipt.inputDigest !== tool.argsSha256
+    || receipt.runId !== event.runId || receipt.correlationId !== event.correlationId) {
+    throw new SessionInvariantError("execution receipt does not bind the tool call/name/arguments/context");
+  }
+  if (tool.executionId !== undefined && receipt.executionId !== tool.executionId) {
+    throw new SessionInvariantError("execution receipt identity changed after start");
+  }
+  if (tool.capabilityDigest !== undefined && receipt.capabilityDigest !== tool.capabilityDigest) {
+    throw new SessionInvariantError("execution capability changed after start");
+  }
+  if (tool.executionContextDigest !== undefined && tool.executionContextDigest !== digestJson({
+    actor: receipt.actor ?? null, scope: receipt.scope ?? null,
+    authorizationContextId: receipt.authorizationContextId ?? null,
+  })) {
+    throw new SessionInvariantError("execution receipt actor/scope binding changed after start");
+  }
+  if (receipt.phase === "not_started" && receipt.startedAt !== undefined) {
+    throw new SessionInvariantError("not-started receipt cannot assert a handler start time");
+  }
+  if (!( ["not_started", "started", "settled"] as string[]).includes(receipt.phase)
+    || !( ["allowed", "rejected"] as string[]).includes(receipt.admission)
+    || !( ["succeeded", "failed", "unknown"] as string[]).includes(receipt.executionOutcome)) {
+    throw new SessionInvariantError("invalid execution receipt lifecycle");
+  }
 }
 
 interface ValidationPendingModelRequest {
@@ -1513,7 +1568,7 @@ function validateEventEnvelope(
     );
   }
   if (!isPlainObject(event)) throw new SessionInvariantError("session event must be a JSON object");
-  if (event.schemaVersion !== SESSION_EVENT_SCHEMA_VERSION) {
+  if (event.schemaVersion !== 1 && event.schemaVersion !== SESSION_EVENT_SCHEMA_VERSION) {
     throw new SessionInvariantError(`unsupported session event schema version: ${String(event.schemaVersion)}`);
   }
   if (event.sessionId !== expectedSessionId) {
@@ -1691,6 +1746,12 @@ function validateCorrelationTransition(
           `tool execution ${event.data.call.id} was already started`,
         );
       }
+      if (event.data.receipt !== undefined) {
+        assertBoundExecutionReceipt(event.data.receipt, tool, event.data.call.id, event);
+        if (event.data.receipt.phase !== "started" || event.data.receipt.admission !== "allowed") {
+          throw new SessionInvariantError("execution-started requires an allowed started receipt");
+        }
+      }
       break;
     }
     case "tool/result": {
@@ -1719,9 +1780,36 @@ function validateCorrelationTransition(
           );
         }
       } else if (!tool.executionStarted) {
-        throw new SessionInvariantError(
-          `tool result ${event.data.toolCallId} has no preceding execution-started event`,
-        );
+        const receipt = event.data.receipt;
+        if (event.schemaVersion !== 2 || !tool.callRecorded || receipt === undefined
+          || receipt.phase !== "not_started" || receipt.admission !== "rejected"
+          || receipt.executionOutcome !== "failed") {
+          throw new SessionInvariantError(
+            `tool result ${event.data.toolCallId} has no preceding execution-started event or bound not-started rejection receipt`,
+          );
+        }
+      }
+      if (event.data.receipt !== undefined) {
+        assertBoundExecutionReceipt(event.data.receipt, tool, event.data.toolCallId, event);
+        if (event.data.receipt.executionOutcome !== event.data.outcome) {
+          throw new SessionInvariantError("tool result receipt outcome does not match result");
+        }
+        if (tool.executionStarted) {
+          const receipt = event.data.receipt;
+          // V2's start event is durable dispatch intent. A trusted, identically
+          // bound receipt can establish that cancellation/revalidation stopped
+          // dispatch after that intent. V1 remains conservatively started.
+          const stoppedBeforeHandler = event.schemaVersion === 2
+            && receipt.phase === "not_started" && receipt.admission === "rejected"
+            && receipt.executionOutcome === "failed";
+          if (!stoppedBeforeHandler && (receipt.admission !== "allowed" || receipt.phase === "not_started")) {
+            throw new SessionInvariantError("started intent requires an allowed result or bound v2 not-started rejection receipt");
+          }
+        }
+        if (event.data.result !== undefined && event.data.receipt.resultDigest !== undefined
+          && event.data.receipt.resultDigest !== digestJson(event.data.result)) {
+          throw new SessionInvariantError("tool result does not match receipt digest");
+        }
       }
       break;
     }
@@ -2171,6 +2259,12 @@ function advanceSessionValidationState(
     case "tool/execution-started": {
       const tool = state.openTools.get(event.data.call.id)!;
       tool.executionStarted = true;
+      tool.executionId = event.data.receipt?.executionId;
+      tool.capabilityDigest = event.data.receipt?.capabilityDigest;
+      tool.executionContextDigest = event.data.receipt === undefined ? undefined : digestJson({
+        actor: event.data.receipt.actor ?? null, scope: event.data.receipt.scope ?? null,
+        authorizationContextId: event.data.receipt.authorizationContextId ?? null,
+      });
       break;
     }
     case "tool/result": {
@@ -2769,6 +2863,38 @@ function isPlainObject(value: unknown): value is Record<string, any> {
   if (value === null || typeof value !== "object" || Array.isArray(value)) return false;
   const prototype = Object.getPrototypeOf(value);
   return prototype === Object.prototype || prototype === null;
+}
+
+/** An immutable pre-upgrade copy preserves every original v1 byte. */
+function preserveV1Bytes(eventsPath: string, eventsFd: number, rootDir: string): void {
+  const backupPath = `${eventsPath}.pre-v2`;
+  const bytes = readFileSync(eventsFd);
+  const noFollow = process.platform === "win32" ? 0 : constants.O_NOFOLLOW;
+  const verifyExisting = (): void => {
+    const fd = openSync(backupPath, constants.O_RDONLY | noFollow);
+    try {
+      eventFileIdentityFromStats(fstatSync(fd, { bigint: true }), backupPath);
+      if (!readFileSync(fd).equals(bytes)) {
+        throw new SessionInvariantError("existing pre-v2 backup does not match original journal bytes");
+      }
+    } finally { closeSync(fd); }
+  };
+  if (eventFileIdentity(backupPath) !== undefined) { verifyExisting(); return; }
+  const temporary = `${backupPath}.${randomUUID()}.tmp`;
+  const fd = openSync(temporary, constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL | noFollow, 0o600);
+  try {
+    fchmodSync(fd, 0o600);
+    writeAll(fd, bytes);
+    fsyncSync(fd);
+  } finally { closeSync(fd); }
+  try {
+    try { linkSync(temporary, backupPath); }
+    catch (error) {
+      if (!isNodeError(error) || error.code !== "EEXIST") throw error;
+      verifyExisting();
+    }
+    fsyncDirectory(rootDir);
+  } finally { unlinkSync(temporary); }
 }
 
 function writeAll(fd: number, bytes: Buffer): void {

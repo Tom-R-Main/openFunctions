@@ -18,7 +18,16 @@ import {
   evaluateAssurance,
   RunExecutionError,
   type VerificationAttempt,
+  type RunToolEffectReceipt,
 } from "../src/framework/runs.js";
+
+function receiptWithoutRefs(receipt: RunToolEffectReceipt | undefined) {
+  if (!receipt) return receipt;
+  const { executionReceiptId, verificationRefs, ...legacy } = receipt;
+  if (executionReceiptId !== undefined) assert.match(executionReceiptId, /^[a-f0-9-]{36}$/);
+  if (verificationRefs !== undefined) assert.ok(Array.isArray(verificationRefs));
+  return legacy;
+}
 
 function adapter(responses: Array<AdapterResponse | Error>): AIAdapter {
   let index = 0;
@@ -177,7 +186,7 @@ test("agent results expose completed and limited runs without false claims", asy
   assert.equal(limited.run.status, "limit_reached");
   assert.equal(limited.run.toolEffects?.state, "partial");
   assert.equal(limited.run.toolEffects?.certainty, "known");
-  assert.deepEqual(limited.run.toolEffects?.receipts, [{
+  assert.deepEqual(limited.run.toolEffects?.receipts?.map(receiptWithoutRefs), [{
     name: "record_limit_effect",
     args: {},
     result: {
@@ -237,7 +246,7 @@ test("agent failures retain an unknown tool-effect receipt and verification requ
         error.toolEffects?.verificationRequired,
         "verify tool side effects before deciding whether any retry is safe",
       );
-      assert.deepEqual(error.toolEffects?.receipts, [{
+      assert.deepEqual(error.toolEffects?.receipts?.map(receiptWithoutRefs), [{
         name: "uncertain_publish",
         args: { destination: "release" },
         result: {
@@ -311,7 +320,7 @@ test("parallel agent calls retain later receipts when an earlier result is not s
         error.toolEffects?.receipts[0].result.error ?? "",
         /Tool execution outcome is unknown:.*BigInt/i,
       );
-      assert.deepEqual(error.toolEffects?.receipts[1], {
+      assert.deepEqual(receiptWithoutRefs(error.toolEffects?.receipts[1]), {
         name: "record_later_effect",
         args: {},
         result: {
@@ -386,6 +395,19 @@ test("parallel agent calls normalize executor rejections without losing later ef
       };
     },
   }));
+  // Deliberately inject an executor rejection into the projected facade.
+  // Registration snapshots prevent mutation of the original schema from
+  // changing execution, so schema mutation is no longer a valid fixture.
+  const project = registry.project.bind(registry);
+  registry.project = (...selection) => {
+    const projected = project(...selection);
+    const execute = projected.executeDetailed.bind(projected);
+    projected.executeDetailed = async (name, ...args) => {
+      if (name === "reject_executor_pipeline") throw new Error("executor pipeline rejected");
+      return execute(name, ...args);
+    };
+    return projected;
+  };
   const worker = defineAgent({
     name: "executor_rejection_worker",
     role: "Executor rejection worker",
@@ -397,17 +419,6 @@ test("parallel agent calls normalize executor rejections without losing later ef
     model: "test-model",
     async chat() {
       adapterCalls += 1;
-      // The run manifest has already snapshotted the valid schema. Mutating
-      // this local test tool now makes validation reject outside the
-      // registry's handler try/catch, exercising defineAgent's settlement.
-      rejectedTool.inputSchema.properties = new Proxy(
-        rejectedTool.inputSchema.properties,
-        {
-          get() {
-            throw new Error("executor pipeline rejected");
-          },
-        },
-      );
       return {
         toolCalls: [
           {
@@ -431,7 +442,7 @@ test("parallel agent calls normalize executor rejections without losing later ef
       assert.ok(error instanceof RunExecutionError);
       assert.equal(error.toolEffects?.certainty, "unknown");
       assert.equal(error.toolEffects?.receipts.length, 2);
-      assert.deepEqual(error.toolEffects?.receipts[0], {
+      assert.deepEqual(receiptWithoutRefs(error.toolEffects?.receipts[0]), {
         name: "reject_executor_pipeline",
         args: { trigger: true },
         result: {
@@ -440,7 +451,7 @@ test("parallel agent calls normalize executor rejections without losing later ef
           executionOutcome: "unknown",
         },
       });
-      assert.deepEqual(error.toolEffects?.receipts[1], {
+      assert.deepEqual(receiptWithoutRefs(error.toolEffects?.receipts[1]), {
         name: "record_after_rejection",
         args: {},
         result: {
@@ -488,7 +499,7 @@ test("agent adapter failures retain receipts for known earlier effects", async (
       assert.equal(error.run.status, "failed");
       assert.equal(error.toolEffects?.certainty, "known");
       assert.equal(error.toolEffects?.verificationRequired, undefined);
-      assert.deepEqual(error.toolEffects?.receipts, [{
+      assert.deepEqual(error.toolEffects?.receipts?.map(receiptWithoutRefs), [{
         name: "record_checkpoint",
         args: {},
         result: {

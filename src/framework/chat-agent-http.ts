@@ -28,14 +28,14 @@ export async function serveChatAgent(
 
   return new Promise((resolve) => {
     server.listen(port, host, () => {
-      console.log(`\n🚀 ChatAgent server running at http://${host}:${port}`);
-      console.log(`   Agent:    ${agent.name}`);
-      console.log(`   Provider: ${agent.provider}`);
-      console.log(`   Model:    ${agent.model}\n`);
-      console.log(`   POST /chat        — send a message`);
-      console.log(`   POST /chat/stream — stream a response (SSE)`);
-      console.log(`   GET  /health      — health check`);
-      console.log(`   POST /reset       — reset conversation\n`);
+      console.error(`\n🚀 ChatAgent server running at http://${host}:${port}`);
+      console.error(`   Agent:    ${agent.name}`);
+      console.error(`   Provider: ${agent.provider}`);
+      console.error(`   Model:    ${agent.model}\n`);
+      console.error(`   POST /chat        — send a message`);
+      console.error(`   POST /chat/stream — stream a response (SSE)`);
+      console.error(`   GET  /health      — health check`);
+      console.error(`   POST /reset       — reset conversation\n`);
       resolve();
     });
   });
@@ -44,7 +44,7 @@ export async function serveChatAgent(
 /** Build the HTTP server without binding it, for embedders and real-socket tests. */
 export function createChatAgentHttpServer(
   agent: ChatAgent,
-  options?: Pick<ServeOptions, "cors">,
+  options?: Pick<ServeOptions, "cors" | "resolveExecutionContext">,
 ): ReturnType<typeof createServer> {
   const cors = options?.cors ?? false;
 
@@ -94,7 +94,9 @@ export function createChatAgentHttpServer(
             return;
           }
 
+          const executionContext = await options?.resolveExecutionContext?.(req);
           const result = await agent.chat(message, {
+            executionContext,
             threadId,
             signal: cancellation.signal,
           });
@@ -117,6 +119,7 @@ export function createChatAgentHttpServer(
             return;
           }
 
+          const executionContext = await options?.resolveExecutionContext?.(req);
           res.writeHead(200, {
             "Content-Type": "text/event-stream",
             "Cache-Control": "no-cache",
@@ -125,6 +128,7 @@ export function createChatAgentHttpServer(
 
           for await (const chunk of agent.chat(message, {
             stream: true,
+            executionContext,
             threadId,
             signal: cancellation.signal,
           })) {

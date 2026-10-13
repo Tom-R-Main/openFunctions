@@ -33,17 +33,17 @@
 
 import { randomUUID } from "node:crypto";
 import type { ToolResult, ToolDefinition, InputSchema } from "./types.js";
+import type { ToolExecutionContext } from "./execution-types.js";
 import type {
   AIAdapter,
   AdapterSessionState,
   ChatMessage,
 } from "./adapters/types.js";
 import { validatedAdapterToolCalls } from "./adapters/types.js";
-import { ToolRegistry } from "./registry.js";
+import type { ToolRegistry } from "./registry.js";
 import { composePrompt, autoToolGuide } from "./prompts.js";
 import {
   defineTool,
-  normalizeToolResult,
   ok,
   uncertainToolExecution,
 } from "./tool.js";
@@ -91,13 +91,21 @@ export interface Agent {
   ): Promise<AgentResult>;
 }
 
-export interface AgentRunOptions extends RunContext {}
+export interface AgentRunOptions extends RunContext {
+  executionContext?: ToolExecutionContext;
+}
 
 export interface AgentResult {
   /** The agent's final text output */
   output: string;
   /** Tool calls made during execution */
-  toolCalls: Array<{ name: string; args: Record<string, unknown>; result: ToolResult }>;
+  toolCalls: Array<{
+    name: string;
+    args: Record<string, unknown>;
+    result: ToolResult;
+    executionReceiptId?: string;
+    verificationRefs?: readonly string[];
+  }>;
   /** Number of LLM rounds consumed */
   rounds: number;
   /** Immutable record of this execution attempt. */
@@ -245,6 +253,8 @@ function attachAgentToolEffects(
     name: call.name,
     args: { ...call.args },
     result: { ...call.result },
+    ...(call.executionReceiptId === undefined ? {} : { executionReceiptId: call.executionReceiptId }),
+    ...(call.verificationRefs === undefined ? {} : { verificationRefs: [...call.verificationRefs] }),
   }));
   const certainty = receipts.some(
     (receipt) => receipt.result.executionOutcome === "unknown",
@@ -252,6 +262,7 @@ function attachAgentToolEffects(
 
   return {
     ...run,
+    executionReceiptRefs: toolCalls.flatMap((call) => call.executionReceiptId ? [call.executionReceiptId] : []),
     toolEffects: {
       state: "partial",
       certainty,
@@ -282,26 +293,14 @@ export function defineAgent(definition: AgentDefinition): Agent {
       context?: string,
       options?: AgentRunOptions,
     ): Promise<AgentResult> {
-      // Build a filtered registry for this agent
-      const agentRegistry = new ToolRegistry();
-      const allTools = registry.getAll();
-      // Treat empty arrays the same as "no filter set" — empty arrays are
-      // truthy in JS, so a previous `!definition.tools && !definition.toolTags`
-      // check would skip the all-tools fallback and an agent declared with
-      // tools: [] silently got zero tools.
+      // Projections retain the executor, policy, journal and scheduling domain.
       const hasNameFilter = (definition.tools?.length ?? 0) > 0;
       const hasTagFilter = (definition.toolTags?.length ?? 0) > 0;
-
-      for (const tool of allTools) {
-        const byName = hasNameFilter && definition.tools!.includes(tool.name);
-        const byTag =
-          hasTagFilter &&
-          definition.toolTags!.some((tag) => tool.tags?.includes(tag));
-
-        if (byName || byTag || (!hasNameFilter && !hasTagFilter)) {
-          agentRegistry.register(tool);
-        }
-      }
+      const agentRegistry = registry.project({
+        filter: (tool) => (!hasNameFilter && !hasTagFilter)
+          || (hasNameFilter && definition.tools!.includes(tool.name))
+          || (hasTagFilter && definition.toolTags!.some((tag) => tool.tags?.includes(tag))),
+      });
 
       // Build system prompt
       const systemPrompt = composePrompt({
@@ -372,25 +371,36 @@ export function defineAgent(definition: AgentDefinition): Agent {
             // execution to settle. Promise.all would reject early and let
             // later side effects finish without ever recording their receipts.
             const settledResults = await Promise.allSettled(
-              calls.map((call) => agentRegistry.execute(call.name, call.args)),
+              calls.map((call) => agentRegistry.executeDetailed(call.name, call.args, {
+                ...options?.executionContext,
+                callId: call.id,
+                runId: run.manifest.runId,
+                correlationId: run.manifest.correlationId,
+                actor: options?.executionContext?.actor ?? { kind: "agent", id: definition.name },
+                authorityGrantRefs: options?.executionContext?.authorityGrantRefs ?? run.manifest.authorityGrantRefs,
+                authorizationContextId: options?.executionContext?.authorizationContextId ?? run.manifest.authorizationContextId,
+              })),
             );
 
-            // Normalize executor rejections and result-serialization failures
-            // independently. Build every receipt in model call order before
+            // Keep canonical executor results without serializing them again.
+            // Normalize rejections and build every receipt in call order before
             // any model-history operation can fail, so a bad earlier result
             // never hides a later call's externally visible effect.
-            const executions = settledResults.map((settled, index) =>
+            const executions = settledResults.map((settled) =>
               settled.status === "rejected"
                 ? uncertainToolExecution(settled.reason)
-                : normalizeToolResult(calls[index].name, settled.value)
+                : settled.value
             );
             for (let index = 0; index < calls.length; index += 1) {
               const call = calls[index];
               const execution = executions[index];
+              const settled = settledResults[index];
+              const receipt = settled.status === "fulfilled" ? settled.value.receipt : undefined;
               toolCalls.push({
                 name: call.name,
                 args: call.args,
                 result: execution.result,
+                ...(receipt ? { executionReceiptId: receipt.executionId, verificationRefs: receipt.verification.evidenceRefs } : {}),
               });
             }
             for (let index = 0; index < calls.length; index += 1) {
@@ -413,6 +423,10 @@ export function defineAgent(definition: AgentDefinition): Agent {
 
           const output = response.text ?? "";
           run = completeRun(run);
+          if (toolCalls.length) {
+            run = { ...run, executionReceiptRefs: toolCalls.flatMap((call) =>
+              call.executionReceiptId ? [call.executionReceiptId] : []) };
+          }
           return {
             output,
             toolCalls,
@@ -473,10 +487,7 @@ export async function runCrew(
   // Add delegation tools if enabled. Done once and reused across all modes.
   let augmentedRegistry = registry;
   if (delegation && agents.length > 1) {
-    augmentedRegistry = new ToolRegistry();
-    for (const tool of registry.getAll()) {
-      augmentedRegistry.register(tool);
-    }
+    augmentedRegistry = registry.project({});
     for (const agent of agents) {
       augmentedRegistry.register(
         createDelegationTool(agent, adapter, registry),
@@ -732,8 +743,8 @@ function createDelegationTool(
       },
       required: ["task"],
     },
-    handler: async ({ task, context }) => {
-      const result = await targetAgent.run(task, adapter, registry, context);
+    handler: async ({ task, context }, executionContext) => {
+      const result = await registry.withChildExecution(() => targetAgent.run(task, adapter, registry, context, { executionContext }));
       return ok(
         { agentName: targetAgent.name, output: result.output, toolCalls: result.toolCalls.length },
         `${targetAgent.definition.role} completed the task.`,
@@ -1013,7 +1024,7 @@ async function runHierarchicalTaskCrew(
 
   // The manager only delegates — give it delegation tools for each worker,
   // not the workers' raw tools.
-  const managerRegistry = new ToolRegistry();
+  const managerRegistry = registry.project({ names: [] });
   for (const worker of workers) {
     managerRegistry.register(createDelegationTool(worker, adapter, registry));
   }

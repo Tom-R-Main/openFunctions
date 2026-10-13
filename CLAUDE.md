@@ -22,7 +22,10 @@ src/
     context.ts       # Context provider interface — connectProvider(), contextPrompt()
     server.ts        # startServer() — MCP server wrapper
     types.ts         # TypeScript interfaces
-    index.ts         # Re-exports everything
+    index.ts         # Side-effect-free public framework exports
+    executor.ts      # Canonical validation, policy, scheduling and receipts
+    execution-journal.ts # Standalone durable action evidence
+    work/            # Opt-in bounded attempts, grants, leases and verification
   providers/         # Context provider implementations
     execufunction/   # ExecuFunction reference provider (tasks, calendar, CRM, etc.)
   examples/          # Read these for patterns
@@ -37,7 +40,9 @@ src/
     utilities/       # Stateless helpers — no store needed (beginner)
   my-tools/          # Student builds here
     index.ts         # Add tools to the myTools array
-  index.ts           # Entry point — registers all tools, starts MCP server
+  index.ts           # Side-effect-free package library entry
+  workshop.ts        # Source workshop — registers tools and starts MCP
+  cli.ts             # Compiled npm executable; serve/config/work commands
 test-client/
   cli.ts                  # Interactive CLI for testing tools (npm run test-tools)
   run-tests.ts            # Tool-test runner — runs `tests` arrays on tool defs
@@ -110,7 +115,7 @@ examples for stateless tools.
 
 1. Define tools in `src/my-tools/index.ts`
 2. Add them to the `myTools` array export
-3. They are automatically registered by `src/index.ts`
+3. They are automatically registered by `src/workshop.ts` through `register-tools.ts`
 4. Test with `npm run test-tools` or `npm run dev`
 
 ## Framework Exports
@@ -158,6 +163,9 @@ npm run dev          # Auto-restarts on save (tsx watch)
 npm run inspect      # MCP Inspector web UI
 npm run gemini       # Chat with Gemini using your tools (needs GEMINI_API_KEY)
 npm start            # Start MCP server for Claude Desktop
+npm run typecheck    # Check development/test types
+npm run test:focused # Local execution, journal, policy and recovery regressions
+npm run test:package # Fresh packed consumer and declarations
 ```
 
 ## Ralph Loops
@@ -201,9 +209,12 @@ agent's output. Returns `CrewResult` with a `ralph` summary attached.
 
 ### Siftable provider (`src/providers/execufunction/`)
 
-Wraps `@siftable/mcp-server@^1.2.9`. Exports `createSiftableProvider()`
-(and a deprecated `createExecuFunctionProvider` alias). 31 tools across
-10 domains today; ~80 more SDK methods reachable via `client.raw()`.
+Uses optional peer `@siftable/mcp-server@^1.5.1` with exact dev SDK 1.5.1.
+Exports `createSiftableProvider()` and deprecated `createExecuFunctionProvider`.
+SDK feature gates and transport policy determine the catalog; unsupported
+hosted work sessions are excluded from embedded discovery. Hosted MCP is
+separate; its durable controller remains blocked by documented public contract
+gaps. Never invent principals, receipt lookup, or retry guarantees.
 
 Auth resolution: explicit option → `SIFT_PAT` env → `EXF_PAT` env.
 Same chain for `SIFT_API_URL` and `SIFT_WORKSPACE_ID`.

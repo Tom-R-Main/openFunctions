@@ -79,7 +79,6 @@ const METADATA: ContextProviderMetadata = {
     "knowledge",
     "people",
     "organizations",
-    "codebase",
     "code_memory",
     "vault",
     "datasets",

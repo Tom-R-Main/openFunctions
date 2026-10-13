@@ -1,0 +1,13 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+  "name": "openfunctions",
+  "version": "1.0.0",
+  "description": "Explicit bounded durable work through the separately installed OpenFunction runtime.",
+  "license": "MIT",
+  "keywords": ["mcp", "durable-work"],
+  "extensions": {
+    "com.nousresearch.hermes": {
+      "servers": { "openfunctions": { "trust": "untrusted" } }
+    }
+  }
+}

@@ -19,6 +19,8 @@ export type {
   ChatOptions,
   ChatMessage,
   AdapterResponse,
+  AdapterUsage,
+  AdapterRequestLimits,
   ReasoningEffort,
   ToolCall,
 } from "./types.js";

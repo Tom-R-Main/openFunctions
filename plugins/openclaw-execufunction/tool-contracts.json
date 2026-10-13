@@ -1,0 +1,498 @@
+{
+  "schemaVersion": 1,
+  "sdk": {
+    "openclaw": "2026.7.1-2",
+    "siftable": "1.5.1",
+    "openfunction": "1.0.0"
+  },
+  "tools": [
+    {
+      "name": "agent_create",
+      "inputSchemaDigest": "2ec2c8117542cd5531d7667beea525dbbff88cdea778c416d864d197bb457a3d"
+    },
+    {
+      "name": "agent_disable",
+      "inputSchemaDigest": "d7c9bd59e6f4e7e68156ce425632ded3382563a9c8c57667ec53614ca833f458"
+    },
+    {
+      "name": "agent_get",
+      "inputSchemaDigest": "d7c9bd59e6f4e7e68156ce425632ded3382563a9c8c57667ec53614ca833f458"
+    },
+    {
+      "name": "agent_list",
+      "inputSchemaDigest": "6a9e8c82e01579de1d248823c396e107927ed12c74da40960a41a4f48ca8c62d"
+    },
+    {
+      "name": "agent_update",
+      "inputSchemaDigest": "bd0de3ae9a4c6645ae0c1f8428428fcafa1e22262d9820aeeb4f7e918d5ccc42"
+    },
+    {
+      "name": "agent_work_list",
+      "inputSchemaDigest": "9e5d9f539bbe53d5b963d06107591009f50d08a68959f31d49e0037a38d38b57"
+    },
+    {
+      "name": "ai_connection_status",
+      "inputSchemaDigest": "050e7f3532d2959993787461d9a6534e88c3329f1d700dae00cc0691087e34bd"
+    },
+    {
+      "name": "ai_generate",
+      "inputSchemaDigest": "ba685cbcabe67b8ed9a3ad92f1a79bddd86d417f89bfda5e8e9a9a25b326d74c"
+    },
+    {
+      "name": "ai_models_list",
+      "inputSchemaDigest": "d746974fa9afd5e951f76f9af38954b0ad7f436f2120dc974da65e5ee39f856f"
+    },
+    {
+      "name": "ai_usage_get",
+      "inputSchemaDigest": "957ff444091f6b957902c7be419b32134298a4cb55c88f72eb9522cca7ad734c"
+    },
+    {
+      "name": "approval_request",
+      "inputSchemaDigest": "701d83f6a0f784826a01646c3c91f06778b7f080f5aa247b92dd4dc13e8cf0be"
+    },
+    {
+      "name": "approval_status",
+      "inputSchemaDigest": "158e0aa7ebd8436a140b21c14603b0310e8b913a858f4639352147694d6b16f5"
+    },
+    {
+      "name": "calendar_create_event",
+      "inputSchemaDigest": "6308e64e54feb7818e091377cf97700ff4ae9d49c31f0de2921996fb16227ac3"
+    },
+    {
+      "name": "calendar_delete_event",
+      "inputSchemaDigest": "103be8c212cabf6d6958391088ba28933fade9c186bb13be19221619d6e7a908"
+    },
+    {
+      "name": "calendar_list_events",
+      "inputSchemaDigest": "c7adad9006ce18a8c123b7dc181079aca2904c0910f1155c45f2d3e370853f8d"
+    },
+    {
+      "name": "calendar_update_event",
+      "inputSchemaDigest": "96f62bd731bfeebcd00254a54bca70b409ba1c6d2a8c9ca349f6fe2dbfda46b8"
+    },
+    {
+      "name": "capability_describe",
+      "inputSchemaDigest": "73c7d93b7f2d8078e34be90fe543130e4fc82580992176056b81614e26c3c2ec"
+    },
+    {
+      "name": "capability_execute",
+      "inputSchemaDigest": "f09d86e942868f06038c0819ce28dca6ba8cc9a37c6d228eaa78f2108c3b3521"
+    },
+    {
+      "name": "capability_list",
+      "inputSchemaDigest": "99334726611ccf58a148b0814696bfa6fe08c1b2d027e946beccf5a74331c9aa"
+    },
+    {
+      "name": "code_memory_delete",
+      "inputSchemaDigest": "a7aed0b2ecb33b35d08cac4f19dcf51d99d20a12968f24aa739df724a558fc4d"
+    },
+    {
+      "name": "code_memory_detect_stale",
+      "inputSchemaDigest": "5b34e3c96e311501ed12d76966f1aef1e670b68a308bfc1df5c8a4d64fb845ab"
+    },
+    {
+      "name": "code_memory_events",
+      "inputSchemaDigest": "b7ec5909174fa44a86cb91441f484d6e0c6ba51525a66a8e329c27eb0a4d83f9"
+    },
+    {
+      "name": "code_memory_get",
+      "inputSchemaDigest": "a7aed0b2ecb33b35d08cac4f19dcf51d99d20a12968f24aa739df724a558fc4d"
+    },
+    {
+      "name": "code_memory_list",
+      "inputSchemaDigest": "c7f34d3256be47c553c2b06f847ff762d1acedd6f5ed935c46d757f9acfd8d91"
+    },
+    {
+      "name": "code_memory_mark_needs_review",
+      "inputSchemaDigest": "ef4649cffa6e3475608e3c86d4a1ab2e33787e622583eb646d6aecc66261ba8b"
+    },
+    {
+      "name": "code_memory_search",
+      "inputSchemaDigest": "077a3027c7371602e6b75e11bbef4e3454e31f85db9b5cc97e50edec33c011c7"
+    },
+    {
+      "name": "code_memory_store",
+      "inputSchemaDigest": "9d402d8358caaacee1deb68e1b6c49b8124b4703b34a0b24fc1ad1386dbaf47d"
+    },
+    {
+      "name": "crm_import_plan_apply",
+      "inputSchemaDigest": "f4ae962285b014478b4324990f9552667d54a7c043f9339ae6e6187c50ed7f1d"
+    },
+    {
+      "name": "crm_import_plan_approve",
+      "inputSchemaDigest": "433206da5a3c928468285c8239b541e6741ddf857d466df89b9776eaab2e652a"
+    },
+    {
+      "name": "crm_import_plan_create",
+      "inputSchemaDigest": "dbe4cacbcb6ab238d11ac21e0ae88bf28268ad9c970e3eee9f0d382d53ef8468"
+    },
+    {
+      "name": "crm_import_plan_get",
+      "inputSchemaDigest": "f4ae962285b014478b4324990f9552667d54a7c043f9339ae6e6187c50ed7f1d"
+    },
+    {
+      "name": "entity_graph",
+      "inputSchemaDigest": "999d2b1fdc80ac3eaf1e12c6357390804cec64ef02dfbe3b699937a1232da6a3"
+    },
+    {
+      "name": "execution_grant_adapter_list",
+      "inputSchemaDigest": "99334726611ccf58a148b0814696bfa6fe08c1b2d027e946beccf5a74331c9aa"
+    },
+    {
+      "name": "execution_grant_request",
+      "inputSchemaDigest": "c9d4b1db08452af2865c8e6bc3ccd368a9b616991a745dc961d9b5d7995fbc7e"
+    },
+    {
+      "name": "execution_grant_status",
+      "inputSchemaDigest": "0979270fdaf2b129f36dcd0cb9e8e41aeac9ee1ed9e52cb5c2cd17f08a0f70b1"
+    },
+    {
+      "name": "lead_discovery_candidate_list",
+      "inputSchemaDigest": "4de3bc8a6424f108edb53f6143965ef46e6c2ca96068db0f9f49212a871fd0f7"
+    },
+    {
+      "name": "lead_discovery_candidate_review",
+      "inputSchemaDigest": "42f809d4e258fdaa4e26888e84aa1b468aa96a7790be9d0a077b589ba10ddb77"
+    },
+    {
+      "name": "lead_discovery_candidate_review_many",
+      "inputSchemaDigest": "5f871259d548be41d133a5ee4f2f1e7012ea1cd2646f0485d8f468f4225b7dbe"
+    },
+    {
+      "name": "lead_discovery_company_prepare",
+      "inputSchemaDigest": "b058971a086c936ebf5967f84552487f1c382ee86e76964267dc07321df90e48"
+    },
+    {
+      "name": "lead_discovery_company_run",
+      "inputSchemaDigest": "596cad086e3c97170865ede09ed5cf64fe4b7790421b6a4429a0a0eceaa0ed43"
+    },
+    {
+      "name": "lead_discovery_company_search",
+      "inputSchemaDigest": "615f4da89e576ee72bb6d4b209c8ee84d4e78465c7343c59dbc187df6f7d9f75"
+    },
+    {
+      "name": "lead_discovery_import_plan_create",
+      "inputSchemaDigest": "858f241927131a4a27ddc3db8bc296eab6f184fbc24aa2972168f462fc345cd0"
+    },
+    {
+      "name": "lead_discovery_import_plan_lookup",
+      "inputSchemaDigest": "d1c7601c22b43c56d8b343c4c05456180c2758a40c05e614834cf569aec21e68"
+    },
+    {
+      "name": "lead_discovery_origin_get",
+      "inputSchemaDigest": "f8f134361ef99724acbbe74ef4f3fd00d6e8e3d85a69cf3f778520096c726285"
+    },
+    {
+      "name": "lead_discovery_run_get",
+      "inputSchemaDigest": "4de3bc8a6424f108edb53f6143965ef46e6c2ca96068db0f9f49212a871fd0f7"
+    },
+    {
+      "name": "note_bulk_delete",
+      "inputSchemaDigest": "7048d638f6a1267b6ff4f8290ff77a426a02f9e1e29f28aee950e4b7392b29da"
+    },
+    {
+      "name": "note_create",
+      "inputSchemaDigest": "9d493523f48346613dbefaadb17ccbe9ee25f759a12ae68210b1cbaea5ea03cd"
+    },
+    {
+      "name": "note_delete",
+      "inputSchemaDigest": "c8ac7c2fe01330209246469f16651674b8b24741d5df76454c5857d5e4c25bfc"
+    },
+    {
+      "name": "note_get",
+      "inputSchemaDigest": "c8ac7c2fe01330209246469f16651674b8b24741d5df76454c5857d5e4c25bfc"
+    },
+    {
+      "name": "note_list",
+      "inputSchemaDigest": "7c0d81b08b787ae98994367dcca1f6a1384fb9450223809595b9950a8fe8e727"
+    },
+    {
+      "name": "note_search",
+      "inputSchemaDigest": "1e6aaf220292b7fad788edbe9e5d3ba5d4a610bc2e511454237504c4eb730e45"
+    },
+    {
+      "name": "note_update",
+      "inputSchemaDigest": "bb5ff84a2f7df431d97b30c6636745e53bd452daaa7481eaf617578218baf370"
+    },
+    {
+      "name": "of_work_finish",
+      "inputSchemaDigest": "365a241c75e446119866ff70ec3799070e582ca6216495733287882da1ddc7a1"
+    },
+    {
+      "name": "of_work_prepare",
+      "inputSchemaDigest": "c70372b2ba4156b18192a057397cec78865584a2eb28b8a39090503cc75ea678"
+    },
+    {
+      "name": "of_work_reconcile",
+      "inputSchemaDigest": "d746974fa9afd5e951f76f9af38954b0ad7f436f2120dc974da65e5ee39f856f"
+    },
+    {
+      "name": "of_work_start",
+      "inputSchemaDigest": "c70372b2ba4156b18192a057397cec78865584a2eb28b8a39090503cc75ea678"
+    },
+    {
+      "name": "of_work_status",
+      "inputSchemaDigest": "d746974fa9afd5e951f76f9af38954b0ad7f436f2120dc974da65e5ee39f856f"
+    },
+    {
+      "name": "of_work_step",
+      "inputSchemaDigest": "49fea99bd29f2bb55b7d8ed0c359759652128801e8817da7e13ff4fc62de709c"
+    },
+    {
+      "name": "of_work_verify",
+      "inputSchemaDigest": "c754761ddfcd760eb1c25f5ac0b1e473c02f542bc86c26865430306db394595a"
+    },
+    {
+      "name": "organization_bulk_delete",
+      "inputSchemaDigest": "5e9e84fe099274b2c6ccfcdc24c99a6817dc9bd1816c8903e88754334e7fbf26"
+    },
+    {
+      "name": "organization_create",
+      "inputSchemaDigest": "685dfa93e9d7658abce8336e19fadae14432acd581e107ca1071b82bf87f5a38"
+    },
+    {
+      "name": "organization_delete",
+      "inputSchemaDigest": "53937233947347e51ccc6a673247378204e9b4b857c202d19a50de7dce903098"
+    },
+    {
+      "name": "organization_enrichment_availability",
+      "inputSchemaDigest": "c84f63955ee185ddf02ee034b8e893535542caddb8f123e14377a9b2cb5cb5e7"
+    },
+    {
+      "name": "organization_enrichment_preview",
+      "inputSchemaDigest": "0e62ac6f1223833469e32e869d8669737f66c4b79a57e02c72491a44c8764c6c"
+    },
+    {
+      "name": "organization_search",
+      "inputSchemaDigest": "f1c0c69c58dc7db2932f086d7c68a19fee48173a593a9400ef9ec4469d853847"
+    },
+    {
+      "name": "organization_update",
+      "inputSchemaDigest": "a0f0d70fab73475b19b14705e49d1bd4695f821754a15dbb38cc19c736fecad0"
+    },
+    {
+      "name": "people_bulk_delete",
+      "inputSchemaDigest": "ea1f749f52b27b9550195fe7e6638351a8d2a08c9939a93fdfed742e8d50f61f"
+    },
+    {
+      "name": "people_search",
+      "inputSchemaDigest": "808fb3bdf4e9d9c76c03d4c7d0cae40ad836510e188ecafc4fc118770c49b7ea"
+    },
+    {
+      "name": "person_create",
+      "inputSchemaDigest": "76b22306e862807f6487be40a5a4d39a47e44b7ea4ed9bccfced460f3966f3ba"
+    },
+    {
+      "name": "person_delete",
+      "inputSchemaDigest": "90234dec5fa18e284ea4f9ba48d0b41d126a47cfa18037d38fc13d2d5d6969e8"
+    },
+    {
+      "name": "person_enrichment_apply",
+      "inputSchemaDigest": "85d6e01945b5d32c3310089e5a9c478cc17869af1a2b1e3603183ccd4603f8fc"
+    },
+    {
+      "name": "person_enrichment_availability",
+      "inputSchemaDigest": "57ba1e8b4c2c85c7d5a243d33978855b8e7f52252aa05894ae610a55bfac98c7"
+    },
+    {
+      "name": "person_enrichment_run",
+      "inputSchemaDigest": "aa1c287bd7d46637b3ab6c7827f0adc21db5bb1ceac79922ae717f1742d14016"
+    },
+    {
+      "name": "person_update",
+      "inputSchemaDigest": "29ce99fe68f7867708e8f8c00e3eacdbc4098465bac905fb4c59532c6087b46f"
+    },
+    {
+      "name": "project_archive",
+      "inputSchemaDigest": "8e1d73142851978024b82363756f08c4462df6a24d5dd9e32e1f899f334fb637"
+    },
+    {
+      "name": "project_create",
+      "inputSchemaDigest": "341acf01e88b390563d4b0af5b49a0ede5a0a6b10195d324505840a55f339b07"
+    },
+    {
+      "name": "project_get_context",
+      "inputSchemaDigest": "af3ecf7989c5616d5706b948aeef6702f6a8e9ea57fbb232b89d8e1283c18dd8"
+    },
+    {
+      "name": "project_list",
+      "inputSchemaDigest": "d541410544e7cc7199105a5a42e945e77d7c86829c1c2b3d5e677bbe4245b3aa"
+    },
+    {
+      "name": "project_planning_get",
+      "inputSchemaDigest": "af3ecf7989c5616d5706b948aeef6702f6a8e9ea57fbb232b89d8e1283c18dd8"
+    },
+    {
+      "name": "project_planning_recompute",
+      "inputSchemaDigest": "af3ecf7989c5616d5706b948aeef6702f6a8e9ea57fbb232b89d8e1283c18dd8"
+    },
+    {
+      "name": "project_update",
+      "inputSchemaDigest": "92915951315ab4408370b52e895020d42a434cb9bb9e1f6cc66ee7919083b3c6"
+    },
+    {
+      "name": "relationship_contact_plan_get",
+      "inputSchemaDigest": "16e1d1d599620627bac11fbe3b5594516dcdb9347b66191f8ff39835473ef836"
+    },
+    {
+      "name": "repository_project_link",
+      "inputSchemaDigest": "bb35830eb96c26a8e3395b962d6e5865075049f5fd4a05329b69f20795d0d28a"
+    },
+    {
+      "name": "schema_introspect",
+      "inputSchemaDigest": "172df53f1eea3f3c270adbb5324e9be7548dfe9434e5ed210f9c906fbaa73df4"
+    },
+    {
+      "name": "task_bulk_delete",
+      "inputSchemaDigest": "cd792b16a46fc158fc0fd2b45aa5fed054b26ab76c063eb9d329b086eb6d7c25"
+    },
+    {
+      "name": "task_complete",
+      "inputSchemaDigest": "c80c13508133f73ba1a3847ff8db86b5fa8c461395460a4b93634db0d193eea7"
+    },
+    {
+      "name": "task_coupling_edge_create",
+      "inputSchemaDigest": "43483da1b3257f332593cec25d53b724dc096bcd28c91c1786dcf5328d198102"
+    },
+    {
+      "name": "task_coupling_edge_delete",
+      "inputSchemaDigest": "02f1961970b5df495eb8e5b7e49f946bd2bcc6e4d57535f37fcacf3bfe70e2e9"
+    },
+    {
+      "name": "task_coupling_edge_list",
+      "inputSchemaDigest": "88e3aa79245faab79d82963319f3157daea249df67562a082f3b4d3c7e8ebbd8"
+    },
+    {
+      "name": "task_create",
+      "inputSchemaDigest": "dba851f83828c4a21c454a1bfeda3516fc96f9814ed2cda4c9a8ab7dee14a5b8"
+    },
+    {
+      "name": "task_delete",
+      "inputSchemaDigest": "88e3aa79245faab79d82963319f3157daea249df67562a082f3b4d3c7e8ebbd8"
+    },
+    {
+      "name": "task_get",
+      "inputSchemaDigest": "88e3aa79245faab79d82963319f3157daea249df67562a082f3b4d3c7e8ebbd8"
+    },
+    {
+      "name": "task_list",
+      "inputSchemaDigest": "72bcba941195cc30fcb87860e3be350fd77d973e307e6c0d2610a4b3fd8c8b78"
+    },
+    {
+      "name": "task_planning_update",
+      "inputSchemaDigest": "b3d1f9b5c16c5c9439da924ee4e3b4e14bd634cabe0f254c05ce1b348f2ae7c5"
+    },
+    {
+      "name": "task_update",
+      "inputSchemaDigest": "ce88173e481fd8268c3575404ed62ae4b2d50077e06032e10fa5536a9cb25de9"
+    },
+    {
+      "name": "upload_document",
+      "inputSchemaDigest": "54a9e9047f766adec01083e86b4eee13fec905133f4ce499857204f4a37a7e61"
+    },
+    {
+      "name": "vault_audit",
+      "inputSchemaDigest": "3a2699f886b5f0919f0ee3244ddc2e9e968d83b78684f91173de34ce0a2de714"
+    },
+    {
+      "name": "vault_create",
+      "inputSchemaDigest": "81e58a5aa75437d3c4499fde1c1437e908d588b771fb313dd66dcac26454800e"
+    },
+    {
+      "name": "vault_list",
+      "inputSchemaDigest": "d9a2a69c347bcf02c28b57173a4eb2496352fcd94a34a09397916328e20d6991"
+    },
+    {
+      "name": "vault_materialization_request",
+      "inputSchemaDigest": "9b78d43a5873b6391f0b7f60846b314bb33db7c8619b418a8fe174c21599daac"
+    },
+    {
+      "name": "vault_materialization_status",
+      "inputSchemaDigest": "f5dfe6e2fb9d33c5962c1bf14c600abd3e6543b9d2b06ab4749eb9e7c53ad56d"
+    },
+    {
+      "name": "vault_search",
+      "inputSchemaDigest": "2447d3589729784e85a291e8749ec29798582d59fcc4a335ec470703b2dab65d"
+    },
+    {
+      "name": "vault_update",
+      "inputSchemaDigest": "5c4f22c67a26719c6d38d131f34f208de8c45d2c09d70270974bcf9afc22d36f"
+    },
+    {
+      "name": "work_dependency_policy_get",
+      "inputSchemaDigest": "273ae93fed8e4802696441ca7537972aeaca876d4347fea49d43758eaea928aa"
+    },
+    {
+      "name": "work_dependency_policy_update",
+      "inputSchemaDigest": "ea7bb1d72b9c0cfc1c8416349bba9d9c7b1bd5cc4f3f0672db2d14d8ff3678cf"
+    },
+    {
+      "name": "work_item_collaboration_cursor_acknowledge",
+      "inputSchemaDigest": "2830bd1b7d014934ca5f96d325e589b3a62983a6b9aa64c052a193f7eff5e07a"
+    },
+    {
+      "name": "work_item_collaboration_event_list",
+      "inputSchemaDigest": "757831934ea1b004d03b2f88ed580c603b1973759cd72909031a3981153d7a9d"
+    },
+    {
+      "name": "work_item_collaboration_event_send",
+      "inputSchemaDigest": "6fb7490190182040945261cf9e6936587a5e41a79648088fe0fd041a4d1ab62f"
+    },
+    {
+      "name": "work_item_collaboration_event_wait",
+      "inputSchemaDigest": "4cfe44e83d86eceb427501021748e13ce3c86440146ff5ba557388c624ea190c"
+    },
+    {
+      "name": "work_item_collaboration_participant_add",
+      "inputSchemaDigest": "775affa4ed4764876e865d8cdf7445b0301c4b400a2858eaa4f88d60b1bcba74"
+    },
+    {
+      "name": "work_item_collaboration_participant_list",
+      "inputSchemaDigest": "b1cd3c1c257876482a8378be48fa587cad37e0152827c69a434eb8703adc87e8"
+    },
+    {
+      "name": "work_item_collaboration_participant_remove",
+      "inputSchemaDigest": "289a180072f61a3ccced626a892265a88cef75892053eb104407dc4f8b8167a9"
+    },
+    {
+      "name": "work_item_create",
+      "inputSchemaDigest": "9432030e671eefe2cd80a6fc710b202fde9612d4f9aefa65f2b263ff5bbb86c8"
+    },
+    {
+      "name": "work_item_dependencies_replace",
+      "inputSchemaDigest": "19316286daac22cd767b77043208635b2ac1746c7d7778d86c0bac856cb5b187"
+    },
+    {
+      "name": "work_item_edit",
+      "inputSchemaDigest": "983fe084f93c9b2ea3457410045ed71fd6fd7adeb09737cbc927b3a3ff9e1490"
+    },
+    {
+      "name": "work_item_get",
+      "inputSchemaDigest": "791a9ca49ae45fc2ef50103461d0970fa1dd38042c661dc637c447e5b2fc8cd0"
+    },
+    {
+      "name": "work_item_list",
+      "inputSchemaDigest": "59ab750d6ca5f50cb1e4f6692d56fc33aef00623b889170b4d6e035f018b2bce"
+    },
+    {
+      "name": "work_item_requeue",
+      "inputSchemaDigest": "3419ab923c04db8f1a33d98c9dc2cab876ecf6de84c92929545b0ae392a1ef30"
+    },
+    {
+      "name": "work_item_revision_history",
+      "inputSchemaDigest": "8002df5e70c1980faf55427dd37a0ef6193e167e19f0d0bba0468b57c2803f88"
+    },
+    {
+      "name": "work_item_verification_evidence_submit",
+      "inputSchemaDigest": "b4d34517b8678bab713c8094da5e54fc383878943e654e4349511c53cd74367a"
+    },
+    {
+      "name": "work_item_verification_history",
+      "inputSchemaDigest": "791a9ca49ae45fc2ef50103461d0970fa1dd38042c661dc637c447e5b2fc8cd0"
+    },
+    {
+      "name": "work_item_verification_plan_get",
+      "inputSchemaDigest": "791a9ca49ae45fc2ef50103461d0970fa1dd38042c661dc637c447e5b2fc8cd0"
+    }
+  ]
+}

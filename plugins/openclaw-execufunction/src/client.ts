@@ -256,17 +256,11 @@ export class ExfClient {
 
   // --- Codebase ---
 
-  async searchCode(query: string, repositoryId?: string) {
-    return unwrap(
-      await this.sift.searchCode({ query, repositoryId }),
-      "searchCode",
-    );
+  async searchCode(_query: string, _repositoryId?: string) {
+    throw new Error("searchCode is unavailable in Siftable SDK 1.5.1; use the advertised hosted MCP code capabilities.");
   }
 
-  async codeWhoKnows(repositoryId: string, area: string) {
-    return unwrap(
-      await this.sift.whoKnows(repositoryId, area),
-      "whoKnows",
-    );
+  async codeWhoKnows(_repositoryId: string, _area: string) {
+    throw new Error("whoKnows is unavailable in Siftable SDK 1.5.1; use the advertised hosted MCP code capabilities.");
   }
 }

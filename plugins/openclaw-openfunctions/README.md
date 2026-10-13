@@ -11,16 +11,15 @@ manifest contract.
 - Calls `toOpenclawToolPluginTools(registry)` to convert each definition into
   OpenClaw's current tool-plugin shape.
 - Ships compiled ESM and uses `openclaw plugins build` to keep
-  `contracts.tools` synchronized before publishing.
+  `contracts.tools` synchronized and verifies input schema digests in
+  `tool-contracts.json`.
 
 ## What it does NOT claim
 
 - This is a reference / demo, not a production-grade plugin.
-- It currently uses a relative import (`../../../src/framework/openclaw.js`)
-  to the colocated openFunctions framework. It runs from inside the
-  openFunctions monorepo. To package for standalone publication, either
-  bundle the framework, depend on a published `openfunction` framework export
-  (not yet on npm), or inline `toOpenclawTools`.
+- It imports the packaged `openfunction/framework/openclaw`, registry and tool
+  subpaths. The repository development dependency links the built package;
+  consumers install `openfunction` alongside the plugin.
 - Marked `"private": true` in `package.json` to prevent accidental publish.
 
 ## Where the bridge lives
@@ -37,7 +36,7 @@ them callable from openclaw — for example, your team's MCP tools — you
 write three lines inside an openclaw plugin:
 
 ```ts
-import { toOpenclawToolPluginTools } from "openfunction/framework"; // when published
+import { toOpenclawToolPluginTools } from "openfunction/framework/openclaw";
 import { registry } from "./your-tools.js";
 
 const definitions = toOpenclawToolPluginTools(registry);

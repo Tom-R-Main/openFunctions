@@ -132,7 +132,7 @@ async function runSingleTest(
   const base = { tool: tool.name, test: test.name };
 
   try {
-    const result = await registry.execute(tool.name, test.input);
+    const { result } = await registry.executeDetailed(tool.name, test.input);
 
     // Check success/failure
     if (result.success !== test.expect.success) {
