@@ -64,6 +64,7 @@ export function createMcpServer(
         ? AbortSignal.any([extra.signal, resolved.signal])
         : extra.signal,
     };
+    const outputSchema = toolRegistry.get(request.params.name)?.outputSchema;
     const execution = await toolRegistry.executeDetailed(
       request.params.name, request.params.arguments ?? {}, context,
     );
@@ -86,11 +87,17 @@ export function createMcpServer(
     if (result.message) content.push({ type: "text", text: result.message });
     // Keep the provider payload exactly aligned with its advertised schema.
     // The receipt is separate metadata, never a wrapper around structuredContent.
+    // The executor validates successful schema output against structuredContent
+    // or data. MCP clients require that validated object in structuredContent.
+    const structuredContent = result.structuredContent !== undefined
+      ? result.structuredContent
+      : outputSchema && result.success && result.data !== null
+        && typeof result.data === "object" && !Array.isArray(result.data)
+        ? result.data as Record<string, unknown>
+        : undefined;
     return {
       content,
-      ...(result.structuredContent === undefined ? {} : {
-        structuredContent: result.structuredContent,
-      }),
+      ...(structuredContent === undefined ? {} : { structuredContent }),
       ...(!result.success ? { isError: true } : {}),
       _meta: {
         ...result._meta,

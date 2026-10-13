@@ -132,8 +132,20 @@ keeps the attempt blocked; completion still requires fresh verification.
 
 Artifacts are immutable, opaque-ID outputs with verified SHA-256 and bounded
 reads. The work profile uses a 32 KiB model output budget and a 64 MiB artifact
-quota. Larger approved output is saved once and exposed by reference; quota
-exhaustion is explicit. The framework provides policy and trusted-code scope
+quota per artifact store. Admitted work operation replies, including verification,
+status and handler failures, are bounded in both canonical UTF-8 JSON and MCP's
+pretty text projection. Schema and catalog rejections happen earlier in the shared
+executor and use its diagnostic formatting.
+Larger replies expose identity/state and evidence summaries plus an immutable
+artifact containing the full canonical `ToolResult` JSON. Content digest lookup
+reuses the artifact on unchanged status reads and after restart. The shipped work
+profile and OpenClaw work facade expose `of_work_artifact_read` for opaque IDs
+from the current selected attempt or saved previews. Reads return at most 16 KiB
+as base64. Preview artifacts remain readable
+after starting an attempt; current attempt receipts and evidence stay complete.
+Quota exhaustion reports `artifactProjection.available: false` explicitly while
+preserving the known operation's success and execution certainty. The framework
+provides policy and trusted-code scope
 checks, not OS isolation from malicious plugins or programs.
 
 Work dispatch refreshes authoritative backend custody after queueing, and

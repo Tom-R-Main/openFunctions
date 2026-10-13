@@ -146,7 +146,7 @@ def work_proof(servers):
     save_config(native)
     names = register_mcp_servers(servers)
     prefix = "mcp__openfunctions__"
-    assert set(names) == {prefix + name for name in ["of_work_prepare", "of_work_start", "of_work_step", "of_work_verify", "of_work_status", "of_work_reconcile", "of_work_finish"]}, names
+    assert set(names) == {prefix + name for name in ["of_work_prepare", "of_work_start", "of_work_step", "of_work_verify", "of_work_status", "of_work_reconcile", "of_work_finish", "of_work_artifact_read"]}, names
     preview = model_tool(prefix + "of_work_prepare", {"workItemId": "correction"})
     assert preview["binding"]["workItemId"] == "correction"
     grants = authorize_job(config_path, "correction")

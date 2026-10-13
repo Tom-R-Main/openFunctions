@@ -16,6 +16,8 @@ export function buildLocalWorkTools(configPath?: string) {
     verify: async (...args: Parameters<WorkAttemptController["verify"]>) => (await controller()).verify(...args),
     status: async (...args: Parameters<WorkAttemptController["status"]>) => (await controller()).status(...args),
     reconcile: async (...args: Parameters<WorkAttemptController["reconcile"]>) => (await controller()).reconcile(...args),
+    projectOutput: async (...args: Parameters<WorkAttemptController["projectOutput"]>) => (await controller()).projectOutput(...args),
+    readOutputArtifact: async (...args: Parameters<WorkAttemptController["readOutputArtifact"]>) => (await controller()).readOutputArtifact(...args),
     finish: async (...args: Parameters<WorkAttemptController["finish"]>) => (await controller()).finish(...args),
   };
   return {

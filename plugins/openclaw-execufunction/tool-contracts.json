@@ -215,6 +215,10 @@
       "inputSchemaDigest": "bb5ff84a2f7df431d97b30c6636745e53bd452daaa7481eaf617578218baf370"
     },
     {
+      "name": "of_work_artifact_read",
+      "inputSchemaDigest": "a4286cff4c4606edaa204e4f9cc0a18bc46b6ac32338028cd4e7d5935f5e48b0"
+    },
+    {
       "name": "of_work_finish",
       "inputSchemaDigest": "365a241c75e446119866ff70ec3799070e582ca6216495733287882da1ddc7a1"
     },

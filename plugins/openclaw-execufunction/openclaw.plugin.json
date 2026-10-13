@@ -97,6 +97,7 @@
       "note_list",
       "note_search",
       "note_update",
+      "of_work_artifact_read",
       "of_work_finish",
       "of_work_prepare",
       "of_work_reconcile",

@@ -47,7 +47,7 @@
     "test:caller-convergence": "tsx test-client/run-caller-convergence-tests.ts",
     "test:durability": "tsx test-client/run-durability-tests.ts",
     "test:session-v2": "tsx test-client/run-session-v2-tests.ts",
-    "test:work": "tsx test-client/run-work-tests.ts",
+    "test:work": "tsx test-client/run-work-tests.ts && tsx test-client/run-work-output-tests.ts",
     "test:mcp-provider": "tsx test-client/run-mcp-provider-tests.ts",
     "test:execution": "tsx test-client/run-execution-tests.ts",
     "test:chat-execution": "tsx test-client/run-chat-execution-tests.ts",

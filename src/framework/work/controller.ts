@@ -3,6 +3,8 @@ import { randomUUID } from "node:crypto";
 import { existsSync } from "node:fs";
 import { join, relative, resolve, isAbsolute } from "node:path";
 import { FileArtifactStore } from "../artifacts.js";
+import { projectWorkOutput } from "./output.js";
+import type { ToolResult } from "../types.js";
 import { ExecutionJournal } from "../execution-journal.js";
 import { capabilityDigest } from "../executor.js";
 import { digestJson, snapshotJson } from "../session.js";
@@ -30,7 +32,7 @@ export class WorkAttemptController {
  private state?:PersistedAttempt;private journal?:WorkAttemptJournal;private executions?:ExecutionJournal;
  private ownership?:JournalFileLock;private controllerOwnership?:JournalFileLock;private timer?:ReturnType<typeof setTimeout>;private stopping=false;
  private readonly lifetime=new AbortController();private inflight=new Set<Promise<unknown>>();
- private artifacts!:FileArtifactStore;private readonly registry:ToolRegistry;
+ private artifacts!:FileArtifactStore;private previewArtifacts?:FileArtifactStore;private readonly registry:ToolRegistry;
  private readonly root:string;private readonly activePath:string;
  constructor(private readonly options:WorkControllerOptions){
    this.root=initializePrivateRoot(options.journalRoot);this.activePath=join(this.root,"active-attempt.json");
@@ -43,6 +45,26 @@ export class WorkAttemptController {
      const events=this.journal!.read();const last=events[events.length-1];
      if(last){this.state=structuredClone(last.data.state) as PersistedAttempt;this.validateRecovered();}else throw new JournalInvariantError("Active attempt journal has no prepared event");
    }
+ }
+ /** Bound the facade reply without changing durable work/evidence or certainty. */
+ projectOutput(result:ToolResult):ToolResult {
+   return projectWorkOutput(result,()=>this.state ? this.artifacts : this.previewArtifactStore());
+ }
+ private previewArtifactStore():FileArtifactStore {
+   return this.previewArtifacts ??= this.options.artifactStore ?? new FileArtifactStore({rootDir:join(this.options.artifactRoot,"previews")});
+ }
+ /** Opaque IDs select current-attempt or preview outputs; prior attempts are not searched. */
+ readOutputArtifact(artifactId:string,options:{offset?:number;length?:number}={}):Record<string,unknown> {
+   if(typeof artifactId !== "string" || !/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/.test(artifactId))throw new JournalInvariantError("Invalid opaque artifact id");
+   const stores=[...(this.state ? [this.artifacts] : []),this.previewArtifactStore()];
+   let selected:FileArtifactStore|undefined;
+   for(const store of stores) {if(existsSync(join(store.rootDir,`${artifactId}.artifact`))){store.metadata(artifactId);selected=store;break;}}
+   if(!selected)throw new JournalInvariantError("Output artifact is unavailable in this work profile");
+   const artifact=selected.metadata(artifactId);const offset=options.offset ?? 0;
+   const length=options.length ?? Math.min(16384,selected.maxReadBytes,Math.max(0,artifact.sizeBytes-offset));
+   if(length>16384)throw new JournalInvariantError("Artifact read exceeds work output bounds");
+   const bytes=selected.read(artifactId,{offset,length});
+   return {artifact,offset,length,encoding:"base64",data:bytes.toString("base64"),hasMore:offset+length<artifact.sizeBytes};
  }
  private assertAdmissionContext(context:ToolExecutionContext={}):void {
    if(this.stopping || this.lifetime.signal.aborted || context.signal?.aborted || context.deadline !== undefined && (!Number.isFinite(context.deadline) || context.deadline <= this.now()))throw new JournalInvariantError("Work admission cancelled or deadline elapsed");
@@ -247,12 +269,13 @@ export class WorkAttemptController {
      return Math.min(context.deadline ?? Infinity,this.now()+plan.steps.find(step=>step.id === stepId)!.timeoutMs,grant.expiresAt,state.startedAt+grant.limits.maxDurationMs);
    });
    const privateRegistry=this.options.registry.project({names:[]},{authorize:async()=>{
-     try{const grant=await this.grant();if(this.stopping || state.renewalFailed || !grant.actions.includes("test") || !state.lease || state.lease.expiresAt <= this.now())return {decision:"deny",reasonCodes:["verification_authority_unavailable"]};return {decision:"allow",authorityGrantRefs:[grant.id],expiresAt:grant.expiresAt};}catch{return {decision:"deny",reasonCodes:["verification_grant_unavailable"]};}
+     try{const grant=await this.grant();await this.fresh(["running"]);if(this.stopping || !["running","verifying"].includes(state.state) || state.unknownExecutions.length || state.renewalFailed || !grant.actions.includes("test") || !state.lease || state.lease.expiresAt <= this.now())return {decision:"deny",reasonCodes:["verification_authority_unavailable"]};return {decision:"allow",authorityGrantRefs:[grant.id],expiresAt:grant.expiresAt};}catch{return {decision:"deny",reasonCodes:["verification_grant_unavailable"]};}
    }});
    const tool={name:`_of_verify_${stepId.replace(/[^a-zA-Z0-9_]/g,"_")}`,description:"Run the exact configured active verification binding",inputSchema:{type:"object" as const,properties:{},additionalProperties:false},contract:{version:"1",useWhen:[],doNotUseWhen:[],sideEffects:["Execute separately authorized verification command"],commitmentClass:"C1" as const,idempotency:"non_idempotent" as const,requiresAuthority:true,mutation:true,bounds:{specDigest:binding.specDigest,environment:binding.environment}},handler:async(_params:Record<string,unknown>,boundContext?:ToolExecutionContext)=>{
      const before=fingerprintSubject(this.options.workspaceRoot,state.binding.workspaceId,binding.inputs,state.mutationEpoch);const startedAt=this.now();
      const result=await binding.run({workspaceRoot:this.options.workspaceRoot,signal:boundContext?.signal ?? (context.signal ? AbortSignal.any([context.signal,this.lifetime.signal]) : this.lifetime.signal)});
-     const after=fingerprintSubject(this.options.workspaceRoot,state.binding.workspaceId,binding.inputs,state.mutationEpoch);const readbackPassed=result.readbackPassed && await binding.readback(this.options.workspaceRoot);
+     const readbackPassed=result.readbackPassed && await binding.readback(this.options.workspaceRoot);
+     const after=fingerprintSubject(this.options.workspaceRoot,state.binding.workspaceId,binding.inputs,state.mutationEpoch);
      const evidence:VerificationEvidence={id:evidenceId,backendId:state.binding.backendId,workItemId:state.workItemId,attemptId:state.attemptId,planId:plan.id,planVersion:plan.version,stepId,specDigest:binding.specDigest,environment:binding.environment,...(result.environmentSnapshot ? {environmentSnapshot:result.environmentSnapshot}:{}),before,after,startedAt,finishedAt:this.now(),exitCode:result.exitCode,outcome:before.digest !== after.digest || before.mutationEpoch !== after.mutationEpoch || result.exitCode === null ? "inconclusive" : result.exitCode === 0 && readbackPassed ? "passed" : "failed",readbackPassed,acceptanceMethods:result.acceptanceMethods,artifact:this.artifacts.put(result.output,{mediaType:"text/plain"})};
      return {success:true,data:evidence};
    }};
@@ -413,22 +436,35 @@ export class WorkAttemptController {
    for(const [id,pending] of Object.entries(state.inflightSteps))if(pending === intent || pending.stepKey === intent.stepKey && pending.inputDigest === intent.inputDigest && pending.reconciliationMetadata === intent.reconciliationMetadata)delete state.inflightSteps[id];
    this.persist("reconciled",{originalExecutionId,readbackExecutionId:execution.receipt.executionId,disposition:"effect_independently_verified"},{executionId:execution.receipt.executionId,receiptRef:execution.receipt.executionId});
  }
- private async checkProof():Promise<void> {
+ private assertProofSubjects(subjects:readonly {binding:WorkControllerOptions["verificationBindings"][number];evidence:VerificationEvidence}[]):void {
+   const state=this.requireState();
+   for(const {binding,evidence} of subjects) {
+     const current=fingerprintSubject(this.options.workspaceRoot,state.binding.workspaceId,binding.inputs,state.mutationEpoch);
+     if(current.digest !== evidence.after.digest || current.mutationEpoch !== evidence.after.mutationEpoch)throw new JournalInvariantError("Verification subject changed");
+     if(digestJson(this.artifacts.metadata(evidence.artifact.id)) !== digestJson(evidence.artifact))throw new JournalInvariantError("Evidence artifact metadata changed");
+   }
+ }
+ private async checkProof():Promise<()=>void> {
    const state=this.requireState();const grant=await this.grant("completion");const {snapshot,plan}=await this.fresh();
    if(snapshot.humanReviewRequired || !plan.steps.some(step=>step.required) || Object.keys(state.inflightSteps).length || Object.keys(state.verificationRuns).length || state.unknownExecutions.length || Object.values(state.operations).some(operation=>operation.status === "started" && operation.ref.kind !== "complete"))throw new JournalInvariantError("Review, missing proof or uncertain operations prevent completion");
    const covered=new Set<string>();
+   const subjects:{binding:WorkControllerOptions["verificationBindings"][number];evidence:VerificationEvidence}[]=[];
    const criterionMethods=new Set(snapshot.contract.acceptanceCriteria.map(criterion=>criterion.method));
    for(const step of plan.steps.filter(step=>step.required || state.evidence[step.id]?.acceptanceMethods.some(method=>criterionMethods.has(method)))) {
      const binding=this.options.verificationBindings.find(binding=>binding.stepId === step.id && binding.specDigest === step.specDigest && binding.environment === step.environment);
      const evidence=state.evidence[step.id];const authoritative=plan.coverage[step.id];
      if(!binding || !evidence || authoritative?.id !== evidence.id || authoritative.outcome !== "passed" || digestJson(authoritative) !== digestJson(evidence) || evidence.outcome !== "passed" || evidence.before.mutationEpoch !== state.mutationEpoch || evidence.after.mutationEpoch !== state.mutationEpoch || evidence.before.digest !== evidence.after.digest || evidence.specDigest !== step.specDigest || evidence.environment !== step.environment || evidence.planId !== plan.id || evidence.planVersion !== plan.version || evidence.attemptId !== state.attemptId)throw new JournalInvariantError("Current active proof missing");
-     const current=fingerprintSubject(this.options.workspaceRoot,state.binding.workspaceId,binding.inputs,state.mutationEpoch);
-     const artifact=this.artifacts.metadata(evidence.artifact.id);
-     if(digestJson(artifact) !== digestJson(evidence.artifact))throw new JournalInvariantError("Evidence artifact metadata changed");
-     if(current.digest !== evidence.after.digest || !await binding.readback(this.options.workspaceRoot))throw new JournalInvariantError("Verification subject changed or independent readback failed");
+     this.assertProofSubjects([{binding,evidence}]);
+     if(!await binding.readback(this.options.workspaceRoot))throw new JournalInvariantError("Independent readback failed");
+     subjects.push({binding,evidence});
      for(const method of evidence.acceptanceMethods)covered.add(method);
    }
    if(!snapshot.contract.acceptanceCriteria.length || !snapshot.contract.acceptanceCriteria.every(criterion=>grant.acceptanceMethods.includes(criterion.method) && covered.has(criterion.method)))throw new JournalInvariantError("Acceptance method coverage missing");
+   // Later readbacks can change inputs checked earlier in the same proof pass.
+   // Return a synchronous fence so terminal dispatch can repeat this check after
+   // every awaited authority lookup without collecting another stale snapshot.
+   this.assertProofSubjects(subjects);
+   return ()=>this.assertProofSubjects(subjects);
  }
  async finish(disposition:"complete"|"review"|"block"|"release"="complete",context:ToolExecutionContext={}):Promise<Record<string,unknown>> {
    return this.admissions.run(async()=>this.lifecycle.run(async()=>{
@@ -446,7 +482,8 @@ export class WorkAttemptController {
        state.state="released";this.persist("blocked",{disposition:"released",backendReceiptRef:receipt.id});this.releaseOwnership();return this.safeStatus();
      }
      let reason="Explicit terminal disposition";
-     if(disposition === "complete")try{await this.checkProof();}catch(error){disposition="review";reason=error instanceof Error ? error.message : "Completion proof unavailable";}
+     let proofSubjects:(()=>void)|undefined;
+     if(disposition === "complete")try{proofSubjects=await this.checkProof();}catch(error){disposition="review";reason=error instanceof Error ? error.message : "Completion proof unavailable";}
      const action=disposition === "complete" ? "complete" : disposition === "review" ? "review" : "block";
      const terminalPayload=action === "complete" ? {evidenceIds:Object.values(state.evidence).map(evidence=>evidence.id),mutationEpoch:state.mutationEpoch} : {reason};
      const payload={leaseId:state.lease!.id,action,payload:terminalPayload};
@@ -456,6 +493,7 @@ export class WorkAttemptController {
        await this.grant("execution");
        if(action === "complete")await this.grant("completion");
        this.assertAdmissionContext(context);
+       if(action === "complete")proofSubjects!();
        return this.options.backend.transition(state.lease!,action,payload.payload,ref.backendKey ?? ref.id,this.requestSignal(context));
      },undefined,undefined,context);
      const snapshot=await this.options.backend.inspect(state.workItemId);const expected=action === "complete" ? "completed" : action === "review" ? "needs_review" : "blocked";

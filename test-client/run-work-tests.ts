@@ -295,6 +295,53 @@ test("queued writes refuse a lease replaced by a successor",async t=>{
  assert.equal(result.receipt.phase,"not_started");assert.equal(effects,0);assert.equal((await local.inspect("job")).lease!.owner,"successor");
 });
 
+test("queued verification refuses successor lease ownership before its command runs",async t=>{
+ const barrier=reviewBarrier();t.after(()=>barrier.release());let verifications=0;
+ let requested!:()=>void;const request=new Promise<void>(resolve=>requested=resolve);
+ const {controller,config,bindings,local}=await setup(t,{journal:{record:event=>{if(event.type === "requested" && event.data.toolName === "_of_verify_fixture_check")requested();}}});
+ const binding=bindings.verificationBindings[0]!;const run=binding.run;
+ binding.run=async context=>{verifications++;return run(context);};
+ await controller.start("job");await correct(controller);
+ config.registry.register({name:"hold_verification_custody",description:"Hold the shared queue before verification",inputSchema:{type:"object",properties:{}},handler:async()=>{barrier.entered();await barrier.waiting;return {success:true};}});
+ const hold=config.registry.executeDetailed("hold_verification_custody",{});await barrier.entry;
+ const pending=controller.verify("fixture-check");const rejection=assert.rejects(pending,/authority|grant|lease/i);
+ await request;await new Promise<void>(resolve=>setImmediate(resolve));
+ await local.release((await local.inspect("job")).lease!,"verification-release");
+ const successor=await local.open({workItemId:"job",claimOwner:"successor",leaseSeconds:120,idempotencyKey:"verification-successor"});
+ await local.transition(successor,"start",{},"verification-successor-start");
+ barrier.release();await hold;await rejection;
+ assert.equal(verifications,0);assert.equal((await local.inspect("job")).lease!.owner,"successor");
+});
+
+test("completion refuses a subject changed during its awaited readback",async t=>{
+ const barrier=reviewBarrier();t.after(()=>barrier.release());
+ const {controller,fixture,bindings,local}=await setup(t);await controller.start("job");await correct(controller);await controller.verify("fixture-check");
+ const binding=bindings.verificationBindings[0]!;const original=binding.readback;let calls=0;
+ binding.readback=async root=>{if(++calls === 1){barrier.entered();await barrier.waiting;}return original(root);};
+ const pending=controller.finish();await barrier.entry;
+ writeFileSync(fixture,JSON.stringify({...JSON.parse(readFileSync(fixture,"utf8")),unverified:true}));barrier.release();
+ assert.equal((await pending).state,"needs_review");assert.equal((await local.inspect("job")).state,"needs_review");
+});
+
+test("completion rechecks its subject after the final awaited grant lookup",async t=>{
+ const barrier=reviewBarrier();t.after(()=>barrier.release());
+ const {controller,fixture,grants,local}=await setup(t);await controller.start("job");await correct(controller);await controller.verify("fixture-check");
+ const original=grants.resolve.bind(grants);let completionLookups=0;
+ grants.resolve=async (binding,purpose)=>{if(purpose === "completion" && ++completionLookups === 2){barrier.entered();await barrier.waiting;}return original(binding,purpose);};
+ const pending=controller.finish();const rejection=assert.rejects(pending,/subject changed/i);await barrier.entry;
+ writeFileSync(fixture,JSON.stringify({...JSON.parse(readFileSync(fixture,"utf8")),unverified:true}));barrier.release();await rejection;
+ assert.equal((await local.inspect("job")).state,"running");assert.equal((await controller.status()).state,"reconciliation_required");
+});
+
+test("verification includes awaited readback changes in its subject fingerprint",async t=>{
+ const {controller,fixture,bindings,local}=await setup(t);await controller.start("job");await correct(controller);
+ const binding=bindings.verificationBindings[0]!;const original=binding.readback;let calls=0;
+ binding.readback=async root=>{if(++calls === 1)writeFileSync(fixture,JSON.stringify({...JSON.parse(readFileSync(fixture,"utf8")),unverified:true}));return original(root);};
+ const evidence=await controller.verify("fixture-check");
+ assert.equal(evidence.outcome,"inconclusive");assert.notEqual(evidence.before.digest,evidence.after.digest);
+ assert.equal((await controller.finish()).state,"needs_review");assert.equal((await local.inspect("job")).state,"needs_review");
+});
+
 for(const change of ["completion","execution","expiry"] as const)test(`terminal dispatch refuses ${change} authority loss during proof readback`,async t=>{
  const barrier=reviewBarrier();t.after(()=>barrier.release());
  const {controller,bindings,grants,local,advance}=await setup(t);await controller.start("job");await correct(controller);await controller.verify("fixture-check");

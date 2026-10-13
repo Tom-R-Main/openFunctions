@@ -8,6 +8,7 @@ import type { Tool } from "@modelcontextprotocol/sdk/types.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import { ToolRegistry } from "../src/framework/registry.js";
 import { createMcpServer, startServer } from "../src/framework/server.js";
+import type { ToolExecution } from "../src/framework/execution-types.js";
 import { TOOLS } from "@siftable/mcp-server";
 import { createSiftableSdkTools } from "../src/providers/execufunction/sdk-tools.js";
 import type { ExfClient } from "../src/providers/execufunction/client.js";
@@ -125,6 +126,89 @@ if (process.argv.includes("--mcp-fixture")) {
     } finally {
       child.kill();
       for (const waiter of pending.values()) waiter.reject(new Error("Fixture closed"));
+    }
+  });
+
+  test("MCP projects validated data without repeating effects or changing canonical receipts", async () => {
+    const executions: Readonly<ToolExecution>[] = [];
+    const registry = new ToolRegistry({
+      journal: { record: () => {}, onSettled: execution => { executions.push(execution); } },
+    });
+    let effects = 0;
+    const outputSchema = {
+      type: "object" as const,
+      properties: { value: { type: "number" as const } },
+      required: ["value"], additionalProperties: false,
+    };
+    registry.register({
+      name: "data_effect", description: "Return ordinary data after one effect", inputSchema: emptySchema,
+      outputSchema,
+      handler: async () => {
+        effects++;
+        return { success: true, data: { value: 42 } };
+      },
+    });
+    registry.register({
+      name: "explicit_result", description: "Keep explicit structured output and rich content", inputSchema: emptySchema,
+      outputSchema,
+      handler: async () => ({ success: true, data: { value: "legacy data" },
+        structuredContent: { value: 7 },
+        content: [{ type: "resource_link", name: "Evidence", uri: "file:///evidence.json" }],
+        _meta: { upstream: "kept", "openfunction/execution": "untrusted receipt" },
+      }),
+    });
+    registry.register({
+      name: "invalid_result", description: "Reject invalid output after an effect", inputSchema: emptySchema,
+      outputSchema,
+      handler: async () => {
+        effects++;
+        return { success: true, data: { value: "invalid" } };
+      },
+    });
+    registry.register({
+      name: "failed_result", description: "Return a known failure with schema-shaped data", inputSchema: emptySchema,
+      outputSchema,
+      handler: async () => ({ success: false, error: "known failure", data: { value: 42 } }),
+    });
+    const handle = createMcpServer(registry, { name: "output-projection" });
+    const client = new Client({ name: "output-validation-client", version: "1" });
+    const [left, right] = InMemoryTransport.createLinkedPair();
+    try {
+      await handle.connect(right);
+      await client.connect(left);
+      const listing = await client.listTools(); // Prime the SDK's output-schema validators.
+      assert.deepEqual(listing.tools.find(tool => tool.name === "data_effect")?.outputSchema, outputSchema);
+      const valid = await client.callTool({ name: "data_effect", arguments: {} });
+      assert.equal(effects, 1);
+      assert.equal(valid.isError, undefined);
+      assert.deepEqual(valid.structuredContent, { value: 42 });
+      assert.deepEqual(executions[0].result.data, valid.structuredContent);
+      assert.equal(executions[0].result.structuredContent, undefined, "Projection does not change the canonical result");
+      assert.deepEqual(valid._meta?.["openfunction/execution"], executions[0].receipt);
+
+      const explicit = await client.callTool({ name: "explicit_result", arguments: {} });
+      assert.deepEqual(explicit.structuredContent, { value: 7 });
+      assert.deepEqual(explicit.content, executions[1].result.content);
+      assert.equal(explicit._meta?.upstream, "kept");
+      assert.deepEqual(explicit._meta?.["openfunction/execution"], executions[1].receipt);
+
+      const invalid = await client.callTool({ name: "invalid_result", arguments: {} });
+      assert.equal(effects, 2);
+      assert.equal(invalid.isError, true);
+      assert.equal(invalid.structuredContent, undefined);
+      assert.equal(executions[2].receipt.errorCategory, "invalid_output");
+      assert.equal(executions[2].receipt.executionOutcome, "unknown");
+      assert.deepEqual(invalid._meta?.["openfunction/execution"], executions[2].receipt);
+
+      const failed = await client.callTool({ name: "failed_result", arguments: {} });
+      assert.equal(failed.isError, true);
+      assert.equal(failed.structuredContent, undefined);
+      assert.equal(executions[3].receipt.executionOutcome, "failed");
+      assert.deepEqual(failed._meta?.["openfunction/execution"], executions[3].receipt);
+      assert.equal(effects, 2);
+    } finally {
+      await client.close();
+      await handle.close();
     }
   });
 
