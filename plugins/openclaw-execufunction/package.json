@@ -1,7 +1,7 @@
 {
   "name": "@openfunctions/openclaw-execufunction",
   "version": "0.3.0",
-  "description": "Siftable plugin for OpenClaw — a shared graph for human planning, agent work, evidence, and governed action",
+  "description": "Siftable plugin for OpenClaw \u2014 a shared graph for human planning, agent work, evidence, and governed action",
   "type": "module",
   "license": "MIT",
   "keywords": [
@@ -21,24 +21,27 @@
   },
   "files": [
     "dist/",
-    "openclaw.plugin.json"
+    "openclaw.plugin.json",
+    "tool-contracts.json"
   ],
   "scripts": {
     "build": "node scripts/clean.mjs && tsc",
     "typecheck": "tsc --noEmit",
-    "sync-contract": "node scripts/sync-contract.mjs",
-    "verify": "npm run sync-contract && npm run build && node scripts/verify-contract.mjs"
+    "sync-contract": "npm run build && node scripts/sync-contract.mjs",
+    "verify": "npm run build && node scripts/verify-contract.mjs"
   },
   "dependencies": {
-    "@siftable/mcp-server": "^1.2.27",
+    "@siftable/mcp-server": "1.5.1",
     "typebox": "^1.3.7"
   },
   "peerDependencies": {
-    "openclaw": ">=2026.5.17"
+    "openclaw": ">=2026.5.17",
+    "openfunction": "^1.0.0"
   },
   "devDependencies": {
     "openclaw": "2026.7.1-2",
-    "@typescript/native": "npm:typescript@7.0.2"
+    "@typescript/native": "npm:typescript@7.0.2",
+    "openfunction": "file:../.."
   },
   "overrides": {
     "@siftable/mcp-server": {

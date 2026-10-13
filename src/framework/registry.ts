@@ -17,11 +17,26 @@ import type {
   AnthropicTool,
   OpenAIFunction,
 } from "./types.js";
-import { validateParams, formatValidationErrors } from "./validate.js";
+import { ToolExecutor, capabilityDigest } from "./executor.js";
+import { snapshotJson } from "./session.js";
+import type { ExecutionJournalSink, ExecutionPolicy, RegistrySelection, ToolExecution, ToolExecutionContext, ToolExecutorOptions } from "./execution-types.js";
 
 export class ToolRegistry {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   private tools: Map<string, ToolDefinition<any, any>> = new Map();
+  private readonly executor: ToolExecutor;
+  private readonly policies: readonly ExecutionPolicy[];
+  private readonly capturedDigests = new Map<string, string>();
+  private readonly origins = new Map<string, () => ToolDefinition | undefined>();
+  private readonly options: Readonly<ToolExecutorOptions>;
+
+  constructor(options: ToolExecutorOptions = {}, shared?: { executor: ToolExecutor; policies: readonly ExecutionPolicy[] }) {
+    this.options = Object.freeze({ ...options, logger: options.logger ?? {
+      warn: (message: string) => console.warn(message), error: (message: string) => console.error(message),
+    } });
+    this.executor = shared?.executor ?? new ToolExecutor(name => this.tools.get(name), this.options);
+    this.policies = shared?.policies ?? [];
+  }
 
   // ── Registration ─────────────────────────────────────────────────────────
 
@@ -38,17 +53,27 @@ export class ToolRegistry {
     opts: { overwrite?: boolean } = {},
   ): void {
     if (this.tools.has(tool.name)) {
+      if (this.options.mode === "governed") throw new Error(`Governed registry collision: ${tool.name}`);
       if (opts.overwrite === false) {
-        console.warn(
+        this.options.logger?.warn?.(
           `⚠️  Tool "${tool.name}" is already registered — keeping existing definition (skipping new one).`,
         );
         return;
       }
-      console.warn(
+      this.options.logger?.warn?.(
         `⚠️  Tool "${tool.name}" is already registered — overwriting.`,
       );
     }
-    this.tools.set(tool.name, tool);
+    const stored = this.options.mode === "governed" ? Object.freeze({ ...tool,
+      inputSchema: snapshotJson(tool.inputSchema) as ToolDefinition["inputSchema"],
+      ...(tool.outputSchema ? { outputSchema: snapshotJson(tool.outputSchema) as ToolDefinition["inputSchema"] } : {}),
+      ...(tool.annotations ? { annotations: snapshotJson(tool.annotations) } : {}),
+      ...(tool._meta ? { _meta: snapshotJson(tool._meta) } : {}),
+      ...(tool.contract ? { contract: snapshotJson(tool.contract) } : {}),
+    }) : tool;
+    this.tools.set(tool.name, stored);
+    this.origins.delete(tool.name);
+    this.capturedDigests.delete(tool.name);
   }
 
   /** Register multiple tools at once. See register() for opts. */
@@ -68,6 +93,8 @@ export class ToolRegistry {
    * destroy agents don't accumulate ghost tools in shared registries.
    */
   unregister(name: string): boolean {
+    this.origins.delete(name);
+    this.capturedDigests.delete(name);
     return this.tools.delete(name);
   }
 
@@ -95,76 +122,55 @@ export class ToolRegistry {
 
   // ── Execution ────────────────────────────────────────────────────────────
 
-  /** Execute a tool by name with the given parameters */
-  async execute(
-    name: string,
-    params: Record<string, unknown>,
-  ): Promise<ToolResult> {
-    const tool = this.tools.get(name);
-    if (!tool) {
-      return { success: false, error: `Unknown tool: "${name}"` };
+  /** Compatible facade returning the canonical JSON-safe result. */
+  async execute(name: string, params: Record<string, unknown>, context: ToolExecutionContext = {}): Promise<ToolResult> {
+    return (await this.executeDetailed(name, params, context)).result;
+  }
+
+  executeDetailed(name: string, params: Record<string, unknown>, context: ToolExecutionContext = {}, lifecycle?: ExecutionJournalSink): Promise<ToolExecution> {
+    const captured = this.capturedDigests.get(name);
+    return this.executor.executeDetailed(name, params, context, {
+      resolve: selected => this.tools.has(selected)
+        ? (this.origins.has(selected) ? this.origins.get(selected)!() : this.tools.get(selected)) : undefined,
+      policies: this.policies, lifecycle,
+      catalogDigest: this.options.mode === "governed" ? captured : undefined,
+    });
+  }
+
+  executeBatch(calls: readonly { name: string; args: Record<string, unknown>; id?: string }[], context: ToolExecutionContext = {}): Promise<ToolExecution[]> {
+    return Promise.all(calls.map(call => this.executeDetailed(call.name, call.args, { ...context, callId: call.id ?? context.callId })));
+  }
+
+  withChildExecution<T>(callback: () => Promise<T>): Promise<T> {
+    return this.executor.withChildExecution(callback);
+  }
+
+  /** A private host capability bound to one adapter-owned lease-renewal tool. */
+  createRenewalRunner(tool: ToolDefinition, lifecycle?: ExecutionJournalSink) {
+    return this.executor.createRenewalRunner(tool, this.policies, lifecycle);
+  }
+
+  /** Visibility ceiling with the same executor, scheduling domain, and policy. */
+  project(selection: RegistrySelection = {}, policy?: ExecutionPolicy): ToolRegistry {
+    const projected = new ToolRegistry(this.options, {
+      executor: this.executor, policies: [...this.policies, ...(policy ? [policy] : [])],
+    });
+    for (const tool of this.getAll()) {
+      if (selection.names && !selection.names.includes(tool.name)) continue;
+      if (selection.tags && !selection.tags.some(tag => tool.tags?.includes(tag))) continue;
+      if (selection.capabilities && !selection.capabilities.some(tag => tool.tags?.includes(tag) || tool.name === tag)) continue;
+      const isRead = tool.contract?.mutation === false || (tool.contract?.sideEffects.length === 0 && tool.contract?.mutation !== true);
+      if (selection.level === "read" && !isRead) continue;
+      if (selection.level === "write" && isRead) continue;
+      if (selection.filter && !selection.filter(tool)) continue;
+      projected.tools.set(tool.name, tool);
+      projected.origins.set(tool.name, () => {
+        if (!this.tools.has(tool.name)) return undefined;
+        return this.origins.has(tool.name) ? this.origins.get(tool.name)!() : this.tools.get(tool.name);
+      });
+      projected.capturedDigests.set(tool.name, capabilityDigest(tool));
     }
-
-    // ── Validate parameters against schema ────────────────────────────────
-    const validationErrors = validateParams(params, tool.inputSchema);
-    if (validationErrors.length > 0) {
-      const message = formatValidationErrors(name, validationErrors);
-      console.error(`\n⚠️  ${message}\n`);
-      return { success: false, error: message, executionOutcome: "failed" };
-    }
-
-    const start = Date.now();
-    try {
-      const result = await tool.handler(params);
-      const duration = Date.now() - start;
-      // The handler returning is not proof that its declared result survived
-      // the model/journal serialization boundary. Keep this executor log
-      // factual; the harness records the canonical outcome after normalization.
-      console.log(`↩️  ${name} returned in ${duration}ms`);
-      return result;
-    } catch (error) {
-      const duration = Date.now() - start;
-      const message =
-        error instanceof Error ? error.message : "Unknown error";
-      const stack =
-        error instanceof Error ? error.stack?.split("\n")[1]?.trim() : "";
-
-      // ── Rich error output ──────────────────────────────────────────────
-      console.error(`\n❓ ${name} threw after ${duration}ms; outcome is unknown`);
-      console.error(`   Error: ${message}`);
-      // Tool inputs may contain credentials or personal data. Log shape only.
-      console.error(`   Input keys: ${Object.keys(params).sort().join(", ") || "(none)"}`);
-      if (stack) {
-        console.error(`   At:    ${stack}`);
-      }
-
-      // Provide hints for common mistakes
-      const hints: string[] = [];
-      if (message.includes("Cannot read properties of undefined")) {
-        hints.push(
-          "A parameter might be missing — check that required fields are provided"
-        );
-      }
-      if (message.includes("is not a function")) {
-        hints.push(
-          "Check that you're importing the right modules and calling functions correctly"
-        );
-      }
-      if (message.includes("fetch") || message.includes("ECONNREFUSED")) {
-        hints.push(
-          "Network request failed — check the URL and your internet connection"
-        );
-      }
-      if (message.includes("ENOENT")) {
-        hints.push("File not found — check the file path");
-      }
-      for (const hint of hints) {
-        console.error(`   Hint:  ${hint}`);
-      }
-      console.error();
-
-      return { success: false, error: message, executionOutcome: "unknown" };
-    }
+    return projected;
   }
 
   // ── Provider Format Adapters ─────────────────────────────────────────────

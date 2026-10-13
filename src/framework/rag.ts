@@ -26,8 +26,6 @@
  */
 
 import { randomUUID } from "node:crypto";
-import pg from "pg";
-const { Pool } = pg;
 import type { ToolDefinition } from "./types.js";
 import { defineTool, ok, err } from "./tool.js";
 
@@ -219,7 +217,8 @@ export async function createRAG(options: RAGOptions): Promise<RAG> {
     );
   }
 
-  const pool = new Pool({ connectionString: databaseUrl });
+  const { default: pg } = await import("pg");
+  const pool = new pg.Pool({ connectionString: databaseUrl });
   const docsTable = `${tablePrefix}_documents`;
   const chunksTable = `${tablePrefix}_chunks`;
 
@@ -310,7 +309,7 @@ export async function createRAG(options: RAGOptions): Promise<RAG> {
       client.release();
     }
 
-    console.log(`📄 Added document "${id}" (${chunks.length} chunk${chunks.length === 1 ? "" : "s"})`);
+    console.error(`📄 Added document "${id}" (${chunks.length} chunk${chunks.length === 1 ? "" : "s"})`);
     return doc;
   }
 

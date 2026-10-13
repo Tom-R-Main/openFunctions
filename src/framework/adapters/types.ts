@@ -93,8 +93,23 @@ export interface ChatMessage {
   providerReplay?: AdapterReplayPayload;
 }
 
+/** Actual provider-reported token usage; absent measurements stay absent. */
+export interface AdapterUsage {
+  inputTokens?: number;
+  outputTokens?: number;
+  cachedInputTokens?: number;
+  reasoningTokens?: number;
+  totalTokens?: number;
+}
+export interface AdapterRequestLimits {
+  maxInputTokens?: number;
+  maxOutputTokens?: number;
+}
+
 /** What the adapter returns after calling the AI */
 export interface AdapterResponse {
+  usage?: AdapterUsage;
+  requestLimits?: AdapterRequestLimits;
   /** Text response from the AI (if any) */
   text?: string;
 

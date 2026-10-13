@@ -17,10 +17,21 @@ export interface HermesMcpStdioServerConfig {
   command: string;
   args?: string[];
   env?: Record<string, string>;
+  cwd?: string;
+  enabled?: boolean;
+  protocol?: "auto" | "legacy" | "stateless";
+  trust?: "full" | "untrusted";
+  lifecycle?: HermesMcpLifecycle;
   timeout?: number;
   connect_timeout?: number;
   supports_parallel_tool_calls?: boolean;
   tools?: HermesMcpToolFilter;
+}
+
+/** Native Hermes lifecycle timeouts; zero disables recycling. */
+export interface HermesMcpLifecycle {
+  idle_timeout_seconds?: number;
+  max_lifetime_seconds?: number;
 }
 
 export interface HermesMcpConfig {
@@ -37,6 +48,16 @@ export interface CreateHermesMcpConfigOptions
   args?: string[];
   /** Environment passed to the MCP subprocess. Do not hard-code secrets. */
   env?: Record<string, string>;
+  /** Working directory for the subprocess. Prefer an absolute caller-owned path. */
+  cwd?: string;
+  /** Explicitly enable or park this server in the host configuration. */
+  enabled?: boolean;
+  /** Hermes handshake selection; compiled OpenFunction currently uses legacy MCP. */
+  protocol?: "auto" | "legacy" | "stateless";
+  /** Untrusted servers require host approval for write-capable tools. */
+  trust?: "full" | "untrusted";
+  /** Optional subprocess recycling thresholds in seconds. */
+  lifecycle?: HermesMcpLifecycle;
   /** Per-tool timeout in seconds. Hermes currently defaults to 300. */
   timeout?: number;
   /** Initial connection timeout in seconds. Hermes currently defaults to 60. */
@@ -67,6 +88,12 @@ export function createHermesMcpConfig(
   assertNonEmpty("command", options.command);
   assertPositive("timeout", options.timeout);
   assertPositive("connectTimeout", options.connectTimeout);
+  if (options.cwd !== undefined) assertNonEmpty("cwd", options.cwd);
+  for (const [key, value] of Object.entries(options.lifecycle ?? {})) {
+    if (value !== undefined && (!Number.isFinite(value) || value < 0)) {
+      throw new Error(`lifecycle.${key} must be a non-negative number`);
+    }
+  }
 
   const include = selectRuntimeTools(registry, options).map(
     ({ tool }) => tool.name,
@@ -82,6 +109,11 @@ export function createHermesMcpConfig(
         command: options.command,
         ...(options.args ? { args: [...options.args] } : {}),
         ...(options.env ? { env: { ...options.env } } : {}),
+        ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
+        ...(options.enabled === undefined ? {} : { enabled: options.enabled }),
+        ...(options.protocol === undefined ? {} : { protocol: options.protocol }),
+        ...(options.trust === undefined ? {} : { trust: options.trust }),
+        ...(options.lifecycle === undefined ? {} : { lifecycle: { ...options.lifecycle } }),
         ...(options.timeout === undefined ? {} : { timeout: options.timeout }),
         ...(options.connectTimeout === undefined
           ? {}

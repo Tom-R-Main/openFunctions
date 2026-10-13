@@ -1,0 +1,11 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/mcp.schema.json",
+  "mcpServers": {
+    "openfunctions": {
+      "type": "stdio",
+      "command": "openfunction",
+      "args": ["serve", "--profile", "work", "--config", "${PLUGIN_DATA}/config.json"],
+      "cwd": "${PLUGIN_DATA}"
+    }
+  }
+}

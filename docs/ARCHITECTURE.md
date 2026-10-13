@@ -2,7 +2,7 @@
 
 openFunctions is easiest to understand if you start from the runtime it is built on:
 
-`ToolDefinition -> ToolRegistry -> AIAdapter`
+`ToolDefinition -> ToolRegistry -> ToolExecutor -> adapter or host`
 
 Everything else in the framework composes on top of that path.
 
@@ -48,12 +48,29 @@ That is why the same tool set works with Claude, Gemini, OpenAI, xAI, and OpenRo
 
 ### Tool execution with validation
 
-Normal flow:
+`registry.execute(name, params, context?)` preserves the ordinary result API.
+`executeDetailed()` also returns exact model content and an execution receipt.
+The executor captures parameters and the tool specification, validates the
+selected JSON Schema dialect, resolves policy, schedules admission, persists a
+start when configured, invokes the handler, normalizes its result once, checks
+output, and persists the canonical receipt before delivery.
 
-1. `registry.execute(name, params)`
-2. validate params against `inputSchema`
-3. run the handler
-4. return `ToolResult`
+The optional handler argument is trusted `ToolExecutionContext`. Tool arguments
+cannot establish identity, scope, grant validity, or lease custody. Governed
+mode requires a policy; even local mode refuses a capability requiring authority
+when no policy has independently validated its binding. Discovery hints confer
+no authority.
+
+Unclassified tools run exclusively. Reviewed `parallel-safe` tools share a
+bounded FIFO scheduler; writes form barriers across callers sharing a registry.
+`registry.project()` preserves execution and policy services. Trusted synthetic
+delegation uses `withChildExecution()` to inherit a private reservation and
+narrowed authority; a read reservation cannot become a write reservation.
+
+Throws, invalid output after entry, and failed result persistence preserve
+unknown effect certainty. Cancellation stops admissions and reaches cooperative
+handlers; a settled result is retained after late cancellation. Direct calls to
+`tool.handler()` remain possible and bypass these guarantees.
 
 This same path is used by:
 
@@ -72,7 +89,75 @@ This same path is used by:
 3. clients call a tool
 4. the server delegates to `registry.execute()`
 
-The MCP layer is thin by design. The registry remains the execution engine.
+The MCP layer is thin by design. `createMcpServer()` provides connect/close
+lifecycle control; `startServer()` remains the stdio convenience. The executor
+owns execution semantics. Discovery preserves annotations, output schemas, and
+provider metadata; structured payloads retain their advertised shape, with
+receipt metadata carried separately. Diagnostics use stderr.
+
+### Durable work and separate journals
+
+`SessionKernel` preserves chat and provider replay invariants. Standalone
+`ExecutionJournal` and `WorkAttemptJournal` record action and attempt state
+without inventing chat turns. They use protected JSONL files, sequence checks,
+cross-process ownership, committed-line recovery, and fsync. Recovery reads
+evidence without dispatching tools.
+
+Session readers accept ordered v1/v2 events. Writers emit v2; rejected or
+cancelled calls need no fictitious start, but their result requires a bound
+not-started receipt. Before the first v2 write, the durable store preserves the
+existing bytes in a protected `.pre-v2` copy. Old binaries cannot read v2, so
+downgrade requires that preserved copy, not deletion of new evidence.
+
+The bounded controller owns one selected attempt, rather than a model loop.
+It resolves persisted grants, coordinates leases and operation identities,
+executes catalog-bound steps, and records actual command/readback evidence.
+Lease renewal has a private execution lane that progresses during a long step;
+terminal transitions and renewals remain serialized with each other.
+
+Verification binds the active plan, environment, source input manifest,
+fingerprints before/after execution, and mutation epoch. Relevant writes
+invalidate proof. Completion rechecks current subject and authoritative coverage
+and uses independent readback. Passing tests and accepted queue status remain
+separate facts. Unknown effects require reconciliation; an interrupted command
+is never blindly rerun because its submission response was lost.
+
+Trusted step bindings can supply `prepareReconciliation` and `reconcileEffect`
+for an independent readback. The controller saves the input-bound readback
+metadata before dispatch. Explicit reconciliation runs the read-only oracle
+through the executor under current grant, catalog, path, and lease checks, then
+records a separate receipt linked to the original uncertain execution. The
+original receipt stays unchanged. Missing, mismatched, or inconclusive readback
+keeps the attempt blocked; completion still requires fresh verification.
+
+Artifacts are immutable, opaque-ID outputs with verified SHA-256 and bounded
+reads. The work profile uses a 32 KiB model output budget and a 64 MiB artifact
+quota per artifact store. Admitted work operation replies, including verification,
+status and handler failures, are bounded in both canonical UTF-8 JSON and MCP's
+pretty text projection. Schema and catalog rejections happen earlier in the shared
+executor and use its diagnostic formatting.
+Larger replies expose identity/state and evidence summaries plus an immutable
+artifact containing the full canonical `ToolResult` JSON. Content digest lookup
+reuses the artifact on unchanged status reads and after restart. The shipped work
+profile and OpenClaw work facade expose `of_work_artifact_read` for opaque IDs
+from the current selected attempt or saved previews. Reads return at most 16 KiB
+as base64. Preview artifacts remain readable
+after starting an attempt; current attempt receipts and evidence stay complete.
+Quota exhaustion reports `artifactProjection.available: false` explicitly while
+preserving the known operation's success and execution certainty. The framework
+provides policy and trusted-code scope
+checks, not OS isolation from malicious plugins or programs.
+
+Work dispatch refreshes authoritative backend custody after queueing, and
+terminal transitions recheck current grants after awaited proof readbacks.
+The executor's optional `ExecutionJournalSink.onSettled` observer runs before
+the scheduler releases its reservation, including after journal or pipeline
+failure. The controller uses it to block queued effects as soon as an outcome
+becomes uncertain.
+
+Hosts can opt into `createArtifactReadTool(store)` for bounded, read-only access
+to opaque artifact IDs from that store. The reader verifies the stored digest
+and cannot resolve arbitrary filesystem paths.
 
 ### Interactive chat
 
@@ -292,3 +377,15 @@ Use this order:
 8. add context providers when you need external systems (task management, calendars, CRM, etc.)
 
 If you keep the runtime in mind, the rest of the framework stays predictable.
+
+## Storage paths and acknowledgement
+
+`createStore(name)` uses caller `cwd/.data` at creation. An explicit
+`createStore(name, { dataDir: "/previous/repository/.data" })` retains access to
+old data. The runtime never copies or merges stores automatically.
+
+`createPgStore()` lazily loads its optional peer. Sync methods acknowledge the
+cache; `await store.flush()` acknowledges queued database writes and surfaces
+errors. Shutdown also flushes and reports failures. This does not provide
+distributed atomic mutation or an event-store contract; durable chat/work
+journals still require their own atomic file/CAS semantics.

@@ -1,0 +1,13 @@
+{
+  "schemaVersion": 1,
+  "tools": [
+    {
+      "name": "of_calculate",
+      "inputSchemaDigest": "159c68d0ad6eca20c1b7ef7434621962afeb3e47e839a8e3b2cd2111cd47ad18"
+    },
+    {
+      "name": "of_convert_units",
+      "inputSchemaDigest": "3d8c8f59d51151e0dbe2d60060da7d6170d158b0dd0fe1d6075b9854dba0ba3f"
+    }
+  ]
+}

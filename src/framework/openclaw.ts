@@ -31,25 +31,26 @@
 
 import type { ToolRegistry } from "./registry.js";
 import type { ToolDefinition, ToolResult } from "./types.js";
+import type { ToolExecutionReceipt } from "./execution-types.js";
 import {
-  executeRuntimeTool,
-  formatRuntimeToolResult,
+  executeRuntimeToolDetailed,
+  runtimeToolContent,
+  runtimeToolFailureMessage,
   selectRuntimeTools,
+  type NativeToolContent,
   type RuntimeToolSelectionOptions,
 } from "./runtime-tool-bridge.js";
 
 // ─── Output shape — compatible with openclaw's AnyAgentTool ────────────────
 
 /** A single content block returned to openclaw. Matches the SDK shape. */
-export interface OpenclawToolContentBlock {
-  type: "text";
-  text: string;
-}
+export type OpenclawToolContentBlock = NativeToolContent;
 
 export interface OpenclawToolResult {
   type: "text" | "error";
   content: OpenclawToolContentBlock[];
   isError?: boolean;
+  details?: { executionReceipt: ToolExecutionReceipt; result: ToolResult };
 }
 
 /**
@@ -159,7 +160,6 @@ export function toolToOpenclaw(
 ): OpenclawToolShape {
   const namePrefix = options.namePrefix ?? "";
   const exposedName = `${namePrefix}${tool.name}`;
-  const formatResult = options.formatResult ?? defaultFormatResult;
   const label = options.label ? options.label(tool) : tool.name;
 
   return {
@@ -167,11 +167,12 @@ export function toolToOpenclaw(
     label,
     description: tool.description,
     parameters: tool.inputSchema,
-    async execute(_toolCallId, params, _signal) {
-      // The bridge checks cancellation before and after execution. The
-      // framework handler contract itself does not yet accept a signal.
-      const result = await executeRuntimeTool(registry, tool, params, _signal);
-      return formatResult(result, tool);
+    async execute(toolCallId, params, signal) {
+      const context = await options.resolveExecutionContext?.({ tool, toolCallId, signal });
+      const { result, receipt } = await executeRuntimeToolDetailed(registry, tool, params, signal, { callId: toolCallId, ...context });
+      return options.formatResult
+        ? options.formatResult(result, tool)
+        : { ...defaultFormatResult(result, tool), details: { executionReceipt: receipt, result } };
     },
   };
 }
@@ -187,23 +188,10 @@ function defaultFormatResult(
   result: ToolResult,
   _tool: ToolDefinition,
 ): OpenclawToolResult {
-  if (!result.success) {
-    return {
-      type: "error",
-      isError: true,
-      content: [
-        {
-          type: "text",
-          text: `Error: ${result.error ?? "unknown error"}`,
-        },
-      ],
-    };
-  }
-
-  const text = formatRuntimeToolResult(result);
   return {
-    type: "text",
-    content: [{ type: "text", text }],
+    type: result.success ? "text" : "error",
+    ...(result.success ? {} : { isError: true }),
+    content: runtimeToolContent(result),
   };
 }
 
@@ -226,18 +214,26 @@ export function toOpenclawToolPluginTools(
       parameters: tool.inputSchema,
       ...(options.optional?.(tool) ? { optional: true } : {}),
       async execute(params, _config, context) {
-        const result = await executeRuntimeTool(
+        const executionContext = await options.resolveExecutionContext?.({
+          tool, toolCallId: context.toolCallId, signal: context.signal, hostContext: context,
+        });
+        const { result, receipt } = await executeRuntimeToolDetailed(
           registry,
           tool,
           params,
           context.signal,
+          { callId: context.toolCallId, ...executionContext },
         );
         if (!result.success) {
-          throw new Error(result.error ?? "unknown error");
+          const error = new Error(runtimeToolFailureMessage(result));
+          Object.assign(error, { executionReceipt: receipt, result });
+          throw error;
         }
         return options.formatResult
           ? options.formatResult(result, tool)
-          : defaultToolPluginResult(result);
+          : result.content !== undefined
+            ? { content: runtimeToolContent(result), details: { executionReceipt: receipt, result } }
+            : defaultToolPluginResult(result);
       },
     }),
   );

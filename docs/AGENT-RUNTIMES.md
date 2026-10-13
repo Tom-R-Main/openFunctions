@@ -1,119 +1,186 @@
 # Agent runtime integrations
 
-OpenFunction definitions can be exposed through MCP or adapted to a host's
-native extension API. The framework keeps all three integrations dependency
-free: install a host SDK only in the plugin or extension package that needs it.
+Hermes consumes OpenFunction through MCP. OpenClaw and Pi use thin native
+projections of the same executor. Native SDKs belong to their plugin packages,
+so importing the framework does not load a host runtime.
 
-## Hermes Agent
+## Hermes configuration and portable installation
 
-Hermes consumes OpenFunction through MCP, its supported boundary for external
-tool servers. `createHermesMcpConfig()` builds the `mcp_servers` fragment for
-`~/.hermes/config.yaml` and snapshots an explicit tool allowlist from the
-registry.
+Use a separately installed, version-tested OpenFunction runtime. Portable
+plugins do not install npm dependencies or fetch an unpinned runtime on demand.
+`plugins/hermes-openfunctions/` contains the manifest, MCP server definition,
+and namespaced durable-work skill. Its command is the bare `openfunction`
+executable on PATH, as required by the pinned portable schema. Caller-owned
+configuration is selected through `${PLUGIN_DATA}`.
+
+The tested portable schemas are Agent Plugins v1. Hermes trust belongs in
+`plugin.json` under `extensions["com.nousresearch.hermes"].servers.openfunctions`.
+The plugin starts disabled; installation performs no claiming or execution.
+Enable it explicitly in the selected profile after configuring the runtime and
+grants. Instructions/toolsets stay stable during a conversation; refresh data
+through tool results or a new session boundary.
+
+For ordinary MCP configuration, generate a merge-ready fragment:
 
 ```ts
-import {
-  createHermesMcpConfig,
-  registry,
-} from "../src/framework/index.js";
+import { createHermesMcpConfig } from "openfunction/framework/hermes";
+import { registry } from "./tools.js";
 
 const config = createHermesMcpConfig(registry, {
-  command: "node",
-  args: ["/absolute/path/to/openfunction/dist/src/index.js"],
+  command: "openfunction",
+  args: ["serve", "--module", "/absolute/tools.js"],
+  cwd: "/absolute/caller-state",
+  protocol: "legacy",
+  trust: "untrusted",
   timeout: 120,
   connectTimeout: 30,
-  supportsParallelToolCalls: true,
-  filter: (tool) => tool.tags?.includes("hermes") ?? false,
+  supportsParallelToolCalls: false,
   resources: false,
   prompts: false,
 });
 ```
 
-Serialize or merge the returned object into YAML, then start a new Hermes
-session or run `/reload-mcp`. Prefer an absolute server entrypoint because
-Hermes may start the subprocess from a different working directory.
+Merge it into the selected profile's configuration. The helper does not edit
+Hermes files or print credentials. `tools.include` captures the selected catalog;
+regenerate and review it when exposing new tools.
 
-The generated `tools.include` is intentional. Adding a new registry tool later
-does not silently grant it to Hermes; regenerate and review the config.
+## Local durable work
 
-## Pi (`@earendil-works/pi`)
+The work profile reads a protected absolute configuration path. Public tools
+prepare, start, step, verify, inspect, reconcile, and finish one explicitly
+selected item. It does not claim the next job or expose an unrestricted shell.
+`of_work_finish` may request review, block, or release explicitly; automatic
+completion still requires the matching completion grant.
 
-Pi has a native TypeScript extension API. `registerPiTools()` accepts the
-small part of `ExtensionAPI` that OpenFunction needs and registers compatible
-tool definitions without importing Pi in the framework itself.
+This example configures a job in an explicitly selected local workspace:
 
 ```ts
-import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import {
-  registerPiTools,
-  type PiExtensionApiLike,
-} from "openfunction/framework";
-import { registry } from "./registry.js";
+import { mkdirSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
+import { createLocalFixtureBindings } from "openfunction/framework/work";
 
-export default function (pi: ExtensionAPI) {
-  registerPiTools(pi as unknown as PiExtensionApiLike, registry, {
-    namePrefix: "of_",
-    promptSnippet: (tool) => `Use ${tool.name} from OpenFunction`,
-  });
-}
+const workspaceRoot = "/absolute/local-job";
+mkdirSync(workspaceRoot, { recursive: true, mode: 0o700 });
+writeFileSync(join(workspaceRoot, "fixture.json"),
+  '{"status":"needs_correction","value":0}\n', { mode: 0o600 });
+writeFileSync(join(workspaceRoot, "verify.mjs"),
+  'import fs from "node:fs";const x=JSON.parse(fs.readFileSync(process.argv[2],"utf8"));if(x.status!=="corrected"||x.value!==1)process.exit(1);console.log("verified");\n',
+  { mode: 0o600 });
+const binding = createLocalFixtureBindings({
+  workspaceRoot, fixturePath: "fixture.json", verifierPath: "verify.mjs",
+});
+writeFileSync(join(workspaceRoot, "profile.json"), JSON.stringify({
+  schemaVersion: 1,
+  workspaceRoot,
+  dataDir: join(workspaceRoot, "state"),
+  grantDir: join(workspaceRoot, "grants"),
+  backend: {
+    kind: "local", backendId: "local-example", workspaceId: "example",
+    workItems: [{
+      workItemId: "job", contract: binding.contract,
+      plan: { id: "fixture-plan", version: 1, state: "active", steps: [binding.verificationStep] },
+    }],
+  },
+  stepCatalog: { kind: "fixture", fixturePath: "fixture.json", verifierPath: "verify.mjs" },
+}), { mode: 0o600 });
 ```
 
-The JSON Schema subset used by `defineTool()` passes through as Pi's
-`parameters` schema. Successful calls return text content plus the original
-`ToolResult` in `details`. Failed validation or handlers throw because that is
-how current Pi sets `isError: true` on a tool result.
+Use the same installed Node runtime to generate the plan and launch the CLI;
+verification binds the executable, arguments, environment, and source inputs.
+Review and issue authority through the shipped CLI:
 
-See `plugins/pi-openfunctions/` for a loadable local reference extension.
+```sh
+openfunction work prepare --config /absolute/local-job/profile.json --work-item job --out /absolute/local-job/preview.json
+openfunction work authorize --config /absolute/local-job/profile.json --preview /absolute/local-job/preview.json
+openfunction hermes-config --config /absolute/local-job/profile.json
+```
+
+The review displays exact roots, paths, actions, step/specification bindings,
+verification, expiry, and limits. `AUTHORIZE` grants execution. A separate
+`COMPLETE` decision enables automatic completion; otherwise it remains off.
+References in model arguments cannot issue grants. Revocation remains available
+when the target fixture or trusted step module disappears:
+
+```sh
+openfunction work grants list --config /absolute/local-job/profile.json
+openfunction work grants revoke --config /absolute/local-job/profile.json --grant <grant-id>
+```
+
+For a practical job, configure `stepCatalog: { kind: "module", modulePath:
+"/absolute/trusted-bindings.js" }`. That trusted module exports
+`createWorkBindings({ workspaceRoot })`, returning tools, finite step bindings,
+and verification bindings. Reviewed configuration selects paths and commands;
+the model selects registered keys and parameters.
+
+Grant/state custody uses protected permissions (0600 files and 0700 directories).
+A same-user process with write access can change it; stronger separation requires
+host permissions and OS isolation. Hermes approval precedes an MCP write request
+but provides no signed server-side grant. Hosted/service use requires a genuine
+authenticated issuer and policy binding.
+
+The controller renews the lease independently of a completed MCP request.
+Cancellation stops admissions and reaches cooperative handlers; started effects
+retain receipts. Restart reads saved evidence and requires explicit reconciliation
+before resuming. Unknown writes do not replay. The fixture catalog provides an
+exact-digest readback for explicit reconciliation; a separate linked receipt
+records that proof while the original uncertain execution stays unchanged.
+Without a supported affirmative oracle, the attempt remains unresolved.
+Evidence binds current inputs and
+mutation epoch; later corrections invalidate it. Native terminal/browser/file
+actions outside OpenFunction are not journaled.
+
+## Pi
+
+`registerPiTools()` and `toolToPi()` preserve native call IDs, signals, results,
+and execution receipts. Text/image content survives directly; absent resource
+features produce explicit text notices. Unknown failures throw a
+verify-before-retry warning with the canonical receipt attached.
+
+The reference extension uses the real SDK and `Type.Unsafe()` for a schema
+already checked by the executor. It imports documented package subpaths rather
+than source-relative internals. Pi contains no separate durable runtime.
 
 ## OpenClaw
 
-Current OpenClaw has two relevant plugin paths:
+The static `defineToolPlugin()` path uses `toOpenclawToolPluginTools()`. Its
+metadata is checked with real `openclaw plugins build` and `plugins validate`,
+including exact tool names and schema digests.
 
-- `defineToolPlugin()` for a static, tool-only plugin. It exposes metadata that
-  `openclaw plugins build` writes to `openclaw.plugin.json` before runtime code
-  is loaded. Use `toOpenclawToolPluginTools()` for this path.
-- `definePluginEntry()` plus `api.registerTool()` for mixed-capability plugins
-  or plugins whose tool names are computed dynamically. Existing
-  `toOpenclawTools()` and `toolToOpenclaw()` remain for this path.
+The mixed `definePluginEntry()` path uses `toOpenclawTools()`. The Siftable plugin
+retains its `execufunction` identity and routes SDK tools through a registry and
+executor. Credentials remain lazy. Local work tools are registered independently
+and use trusted plugin `workConfigPath` (or `OPENFUNCTION_WORK_CONFIG`). Discovery
+performs no login, claim, or network work.
 
-```ts
-import { defineToolPlugin } from "openclaw/plugin-sdk/tool-plugin";
-import type { TSchema } from "typebox";
-import { toOpenclawToolPluginTools } from "openfunction/framework";
-import { registry } from "./registry.js";
+Mixed failures retain error blocks and `isError`; static tool-plugin failures
+throw. Both retain unknown certainty and receipts. The static CLI validator
+requires `defineToolPlugin` metadata and cannot validate the legacy mixed entry;
+that path is checked through real SDK types, registration/calls, and exact
+manifest parity instead.
 
-const definitions = toOpenclawToolPluginTools(registry);
+## Reproducible host checks
 
-export default defineToolPlugin({
-  id: "my-openfunctions-tools",
-  name: "My OpenFunction tools",
-  description: "Expose an OpenFunction registry to OpenClaw.",
-  tools: (tool) => definitions.map((definition) => tool({
-    ...definition,
-    parameters: definition.parameters as TSchema,
-  })),
-});
+Hermes is pinned to `7cc3fb8cb55898747dd1dfa56fda3e16ebba028e`. Native checks
+use OpenClaw `2026.7.1-2` and Pi `0.84.1`, pinned in plugin lockfiles. These are
+tested versions, not promises about future releases.
+
+```sh
+node test-client/provision-hermes-runtime.mjs --hermes-root /absolute/hermes-agent --runtime-dir /absolute/managed-runtime --data-dir /absolute/provisioning-home --out /absolute/runtime.json
+node test-client/run-hermes-tests.mjs --hermes-root /absolute/hermes-agent --python /absolute/managed-python --runtime-dir /absolute/managed-runtime --mode work
+npm run test:hosts
 ```
 
-For distributable plugins, ship compiled ESM, keep `typebox` in runtime
-dependencies, declare `openclaw >=2026.5.17` as a peer, and run both:
+Provisioning uses Hermes's official package manager and isolated paths. The
+driver exercises ordinary MCP, a pinned local Git portable install while disabled,
+explicit enablement, skill/tool discovery, approval/refusal, and profile isolation.
+Its deterministic model endpoint is local and spends no model credits.
 
-```bash
-openclaw plugins build --entry ./dist/index.js --check
-openclaw plugins validate --entry ./dist/index.js
-```
-
-`plugins/openclaw-openfunctions/` demonstrates the generated tool-only path.
-`plugins/openclaw-execufunction/` uses direct registration because its surface
-is projected dynamically from the installed Siftable MCP SDK. Its checked-in
-`contracts.tools` list is generated from that same SDK and verified against
-runtime registrations, so OpenClaw discovery cannot drift from execution.
-
-## Contract comparison
-
-| Runtime | Boundary | Failure signal | Discovery safeguard |
-|---|---|---|---|
-| Hermes | MCP stdio | MCP error result | Explicit `tools.include` snapshot |
-| Pi | `ExtensionAPI.registerTool()` | Throw from `execute()` | Extension-selected registry filter |
-| OpenClaw tool plugin | `defineToolPlugin()` | Throw from `execute()` | Generated `contracts.tools` manifest |
-| OpenClaw mixed plugin | `api.registerTool()` | Throw from `execute()` | Generated and runtime-verified manifest contract |
+The work lane uses the installed tarball and real grant CLI. It checks renewal
+during a step longer than the lease, lost model delivery after a durable result,
+actual process death/restart, exact result recovery without repeat effects,
+fresh verification/completion, revocation, stale-subject refusal, and crashes
+between effect and receipt with both supported and unsupported readback. Logs
+record exact package/host/runtime versions and
+the tested loss boundary. Missing setup is an explicit failure or unproven boundary,
+never a successful silent skip. Cold CI may use `--install-mode online` to acquire
+tarball dependencies; tool/model traffic remains local.

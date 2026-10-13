@@ -18,6 +18,7 @@
  */
 
 import type { ToolResult } from "./types.js";
+import type { ToolExecutionContext } from "./execution-types.js";
 import type { ToolRegistry } from "./registry.js";
 import type {
   AIAdapter,
@@ -25,7 +26,7 @@ import type {
   ChatMessage,
 } from "./adapters/types.js";
 import { validatedAdapterToolCalls } from "./adapters/types.js";
-import { normalizeToolResult, uncertainToolExecution } from "./tool.js";
+import { uncertainToolExecution } from "./tool.js";
 import {
   completeRun,
   createRunManifest,
@@ -173,8 +174,9 @@ function createWorkflow<TIn, TOut>(
 export function toolStep(
   registry: ToolRegistry,
   toolName: string,
+  executionContext?: ToolExecutionContext,
 ): Step<Record<string, unknown>, ToolResult> {
-  return async (params) => registry.execute(toolName, params);
+  return async (params) => (await registry.executeDetailed(toolName, params, executionContext)).result;
 }
 
 function attachWorkflowToolEffects(
@@ -186,6 +188,8 @@ function attachWorkflowToolEffects(
     name: receipt.name,
     args: { ...receipt.args },
     result: { ...receipt.result },
+    ...(receipt.executionReceiptId === undefined ? {} : { executionReceiptId: receipt.executionReceiptId }),
+    ...(receipt.verificationRefs === undefined ? {} : { verificationRefs: [...receipt.verificationRefs] }),
   }));
   const certainty = copiedReceipts.some(
     (receipt) => receipt.result.executionOutcome === "unknown",
@@ -219,6 +223,7 @@ export function llmStep(
   adapter: AIAdapter,
   registry: ToolRegistry,
   promptTemplate: string,
+  executionContext?: ToolExecutionContext,
 ): Step<string, string> {
   return async (input: string) => {
     const prompt = promptTemplate.replace(/\{\{input\}\}/g, input);
@@ -270,20 +275,26 @@ export function llmStep(
               });
 
           const settledResults = await Promise.allSettled(
-            calls.map((call) => registry.execute(call.name, call.args)),
+            calls.map((call) => registry.executeDetailed(call.name, call.args, {
+              ...executionContext, callId: call.id, runId: run.manifest.runId, correlationId: run.manifest.correlationId,
+              actor: executionContext?.actor ?? { kind: "agent", id: "workflow_llm_step" },
+            })),
           );
-          const executions = settledResults.map((settled, index) =>
+          const executions = settledResults.map((settled) =>
             settled.status === "rejected"
               ? uncertainToolExecution(settled.reason)
-              : normalizeToolResult(calls[index].name, settled.value)
+              : settled.value
           );
           for (let index = 0; index < calls.length; index += 1) {
             const call = calls[index];
             const execution = executions[index];
+            const settled = settledResults[index];
+            const receipt = settled.status === "fulfilled" ? settled.value.receipt : undefined;
             const result = execution.result;
             receipts.push({
               name: call.name,
               args: { ...call.args },
+              ...(receipt ? { executionReceiptId: receipt.executionId, verificationRefs: receipt.verification.evidenceRefs } : {}),
               result: {
                 success: result.success,
                 ...(Object.prototype.hasOwnProperty.call(result, "data")

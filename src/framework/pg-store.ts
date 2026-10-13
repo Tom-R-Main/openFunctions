@@ -1,150 +1,146 @@
-/**
- * OpenFunction — Postgres Store
- *
- * Same API as createStore() but backed by Postgres instead of JSON files.
- * Data loads into memory on startup, writes through to Postgres on every change.
- * Switching from JSON to Postgres is a one-line change:
- *
- *   // Before (JSON files):
- *   const tasks = createStore<Task>("tasks");
- *
- *   // After (Postgres):
- *   const tasks = await createPgStore<Task>("tasks");
- *
- * All your tool code stays exactly the same — get(), set(), getAll(), etc.
- *
- * Setup:
- *   1. Have Postgres running (local Docker, Cloud SQL, Supabase, Neon, etc.)
- *   2. Set DATABASE_URL:  export DATABASE_URL=postgres://user:pass@localhost:5432/mydb
- *   3. That's it — tables are created automatically
- *
- * Each store gets its own table (of_<name>) with two columns:
- *   - id    (text, primary key)
- *   - data  (jsonb, your tool's data)
- *
- * For a more production-grade approach with proper schemas, migrations,
- * and row-level security, see how ExecuFunction structures its database layer.
+/** Optional Postgres cache with ordered asynchronous persistence.
+ * Sync mutations update the local cache; await flush() to acknowledge queued
+ * database writes. This is not a distributed atomic store or event journal.
  */
-
-import pg from "pg";
-const { Pool } = pg;
+import type pg from "pg";
 import type { Store } from "./store.js";
 
-// ─── Connection Pool (shared across all stores) ────────────────────────────
+/** Small injectable database boundary for deterministic persistence checks. */
+export interface PgStoreDatabase {
+  query<T extends Record<string, unknown> = Record<string, unknown>>(
+    sql: string,
+    values?: unknown[],
+  ): Promise<{ rows: T[] }>;
+}
 
-let pool: pg.Pool | null = null;
+export interface PgStoreOptions {
+  /** Caller-owned database connection; the shared pool is not initialized. */
+  database?: PgStoreDatabase;
+}
 
-function getPool(): pg.Pool {
-  if (!pool) {
+export interface PgStore<T> extends Store<T> {
+  /** Wait for writes queued before this call; rejects on any persistence failure. */
+  flush(): Promise<void>;
+}
+
+let poolPromise: Promise<pg.Pool> | undefined;
+let closing: Promise<void> | undefined;
+let poolEpoch = 0;
+const stores = new Set<{ flush(): Promise<void>; close(): void }>();
+
+async function getPool(): Promise<pg.Pool> {
+  if (closing) throw new Error("Postgres pool is shutting down");
+  if (!poolPromise) {
     const connectionString = process.env.DATABASE_URL;
     if (!connectionString) {
-      throw new Error(
-        "DATABASE_URL environment variable is required for Postgres stores.\n\n" +
-          "Set it to your Postgres connection string:\n" +
-          "  export DATABASE_URL=postgres://user:pass@localhost:5432/mydb\n\n" +
-          "Quick options:\n" +
-          "  - Local Docker:  docker run -e POSTGRES_PASSWORD=pass -p 5432:5432 postgres\n" +
-          "  - Supabase:      https://supabase.com (free tier)\n" +
-          "  - Neon:          https://neon.tech (free tier)\n" +
-          "  - Google Cloud SQL, AWS RDS, etc.\n\n" +
-          "Don't want a database? Use createStore() instead — it saves to JSON files."
-      );
+      throw new Error("DATABASE_URL is required for Postgres stores. Set it to your Postgres connection string, or use createStore() for JSON files.");
     }
-    pool = new Pool({ connectionString });
-  }
-  return pool;
-}
-
-/**
- * Shut down the connection pool gracefully.
- * Call this when your server is shutting down (optional).
- */
-export async function closePgPool(): Promise<void> {
-  if (pool) {
-    await pool.end();
-    pool = null;
-  }
-}
-
-// ─── Store Factory ─────────────────────────────────────────────────────────
-
-/**
- * Create a persistent store backed by Postgres.
- *
- * Same interface as createStore() — your tool code doesn't change.
- * The table is created automatically if it doesn't exist.
- * Data is loaded into memory on startup for fast reads, and written
- * through to Postgres on every set/delete for durability.
- *
- * @param name - Store name (becomes table "of_<name>", e.g. "tasks" → of_tasks)
- */
-export async function createPgStore<T>(name: string): Promise<Store<T>> {
-  const db = getPool();
-  // Prefix with of_ to avoid collisions with existing tables
-  const table = `of_${name.replace(/[^a-z0-9_]/gi, "_")}`;
-
-  // Create table if it doesn't exist
-  await db.query(`
-    CREATE TABLE IF NOT EXISTS ${table} (
-      id    TEXT PRIMARY KEY,
-      data  JSONB NOT NULL
-    )
-  `);
-
-  // Load all existing data into memory
-  const { rows } = await db.query<{ id: string; data: T }>(
-    `SELECT id, data FROM ${table}`
-  );
-  const cache = new Map<string, T>(rows.map((r) => [r.id, r.data]));
-
-  return {
-    get(id: string): T | undefined {
-      return cache.get(id);
-    },
-
-    set(id: string, value: T): void {
-      cache.set(id, value);
-      // Write through to Postgres (fire-and-forget for sync interface)
-      db.query(
-        `INSERT INTO ${table} (id, data) VALUES ($1, $2::jsonb)
-         ON CONFLICT (id) DO UPDATE SET data = $2::jsonb`,
-        [id, JSON.stringify(value)]
-      ).catch((err) => {
-        console.error(`PgStore(${name}): write failed for "${id}":`, err.message);
-      });
-    },
-
-    delete(id: string): boolean {
-      const existed = cache.delete(id);
-      if (existed) {
-        db.query(`DELETE FROM ${table} WHERE id = $1`, [id]).catch((err) => {
-          console.error(`PgStore(${name}): delete failed for "${id}":`, err.message);
-        });
+    const initialization = import("pg").then(({ default: driver }) =>
+      new driver.Pool({ connectionString }),
+    ).catch((error: unknown) => {
+      if (error && typeof error === "object" && "code" in error
+          && error.code === "ERR_MODULE_NOT_FOUND"
+          && error instanceof Error && error.message.includes("'pg'")) {
+        throw new Error("Postgres stores require the optional pg package. Install pg before using createPgStore().", { cause: error });
       }
+      throw error;
+    });
+    poolPromise = initialization;
+    initialization.catch(() => {
+      if (poolPromise === initialization) poolPromise = undefined;
+    });
+  }
+  return poolPromise;
+}
+
+/** Flush queued writes and close the shared pool. Does not import pg if unused.
+ * Persistence errors remain visible here even when a previous flush observed them.
+ */
+export function closePgPool(): Promise<void> {
+  if (closing) return closing;
+  poolEpoch += 1;
+  const active = [...stores];
+  for (const store of active) store.close();
+  const currentPool = poolPromise;
+  const shutdown = (async () => {
+    const errors: unknown[] = [];
+    const flushed = await Promise.allSettled(active.map((store) => store.flush()));
+    for (const result of flushed) if (result.status === "rejected") errors.push(result.reason);
+    if (currentPool) {
+      try { await (await currentPool).end(); } catch (error) { errors.push(error); }
+    }
+    for (const store of active) stores.delete(store);
+    if (poolPromise === currentPool) poolPromise = undefined;
+    if (errors.length) throw new AggregateError(errors, "Postgres shutdown failed");
+  })();
+  closing = shutdown;
+  // Handle cleanup without creating a second unhandled rejected promise.
+  shutdown.then(() => { closing = undefined; }, () => { closing = undefined; });
+  return shutdown;
+}
+
+/** Create a cache backed by Postgres. Sync API stays compatible with Store.
+ * All changes are serialized in call order. await flush() before reporting a
+ * durable success, and do not use this cache for work or conversation journals.
+ */
+export async function createPgStore<T>(
+  name: string,
+  options: PgStoreOptions = {},
+): Promise<PgStore<T>> {
+  if (closing) throw new Error("Postgres pool is shutting down");
+  if (typeof name !== "string" || !name) {
+    throw new Error("Postgres store name must be non-empty");
+  }
+  const startupEpoch = poolEpoch;
+  const db = options.database ?? await getPool();
+  // Preserve legacy punctuation normalization and PostgreSQL case folding.
+  // Quote the sanitized identifier so it cannot alter the SQL statement.
+  const table = `"of_${name.replace(/[^a-z0-9_]/gi, "_").toLowerCase()}"`;
+  await db.query(`CREATE TABLE IF NOT EXISTS ${table} (id TEXT PRIMARY KEY, data JSONB NOT NULL)`);
+  const { rows } = await db.query<{ id: string; data: T }>(`SELECT id, data FROM ${table}`);
+  if (closing || startupEpoch !== poolEpoch) throw new Error("Postgres pool shut down during store initialization");
+  const cache = new Map<string, T>(rows.map((row) => [row.id, row.data]));
+  const errors: unknown[] = [];
+  let tail: Promise<void> = Promise.resolve();
+  let closed = false;
+  function assertOpen(): void {
+    if (closed) throw new Error(`PgStore(${name}) has been closed`);
+  }
+  function enqueue(sql: string, values?: unknown[]): void {
+    tail = tail.then(async () => {
+      try { await db.query(sql, values); } catch (error) { errors.push(error); }
+    });
+  }
+  async function flush(): Promise<void> {
+    const boundary = tail;
+    await boundary;
+    if (errors.length) throw new AggregateError([...errors], `PgStore(${name}) persistence failed`);
+  }
+  stores.add({ flush, close: () => { closed = true; } });
+  return {
+    get: (id) => cache.get(id),
+    set(id, value) {
+      assertOpen();
+      const serialized = JSON.stringify(value);
+      if (serialized === undefined) throw new Error("Postgres store values must be JSON serializable");
+      cache.set(id, value);
+      enqueue(`INSERT INTO ${table} (id, data) VALUES ($1, $2::jsonb) ON CONFLICT (id) DO UPDATE SET data = $2::jsonb`, [id, serialized]);
+    },
+    delete(id) {
+      assertOpen();
+      const existed = cache.delete(id);
+      if (existed) enqueue(`DELETE FROM ${table} WHERE id = $1`, [id]);
       return existed;
     },
-
-    getAll(): T[] {
-      return Array.from(cache.values());
-    },
-
-    entries(): [string, T][] {
-      return Array.from(cache.entries());
-    },
-
-    get size(): number {
-      return cache.size;
-    },
-
-    has(id: string): boolean {
-      return cache.has(id);
-    },
-
-    clear(): void {
+    getAll: () => [...cache.values()],
+    entries: () => [...cache.entries()],
+    get size() { return cache.size; },
+    has: (id) => cache.has(id),
+    clear() {
+      assertOpen();
       cache.clear();
-      db.query(`DELETE FROM ${table}`).catch((err) => {
-        console.error(`PgStore(${name}): clear failed:`, err.message);
-      });
+      enqueue(`DELETE FROM ${table}`);
     },
+    flush,
   };
 }

@@ -5,34 +5,61 @@
  * These types define the universal interface for AI-callable tools.
  */
 
-// ─── JSON Schema (subset used for tool parameters) ─────────────────────────
+import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
+import type { ExecutionMode, ReplayPolicy, ToolExecutionContext } from "./execution-types.js";
+
+// ─── JSON Schema (draft-07 and explicit draft 2020-12) ────────────────────
 
 export type JsonSchemaType =
-  | "string"
-  | "number"
-  | "integer"
-  | "boolean"
-  | "array"
-  | "object"
-  | "null";
+  | "string" | "number" | "integer" | "boolean" | "array" | "object" | "null";
+
+/** Boolean schemas are valid wherever a subschema is accepted. */
+export type JsonSchema = boolean | JsonSchemaProperty;
 
 export interface JsonSchemaProperty {
-  type?: JsonSchemaType | JsonSchemaType[];
+  $schema?: string;
+  $vocabulary?: Record<string, boolean>;
+  $id?: string;
+  $ref?: string;
+  $anchor?: string;
+  $dynamicAnchor?: string;
+  $dynamicRef?: string;
+  $defs?: Record<string, JsonSchema>;
+  definitions?: Record<string, JsonSchema>;
+  $comment?: string;
+  title?: string;
   description?: string;
-  /**
-   * Allowed values. JSON Schema permits any primitive here, not just
-   * strings — an integer field can legitimately constrain to enum: [1, 2, 3].
-   */
+  type?: JsonSchemaType | JsonSchemaType[];
   enum?: unknown[];
   const?: unknown;
-  items?: JsonSchemaProperty | JsonSchemaProperty[];
-  properties?: Record<string, JsonSchemaProperty>;
-  required?: string[];
   default?: unknown;
-  additionalProperties?: boolean | JsonSchemaProperty;
-  anyOf?: JsonSchemaProperty[];
-  oneOf?: JsonSchemaProperty[];
-  allOf?: JsonSchemaProperty[];
+  examples?: unknown[];
+  readOnly?: boolean;
+  writeOnly?: boolean;
+  deprecated?: boolean;
+  items?: JsonSchema | JsonSchema[];
+  additionalItems?: JsonSchema;
+  prefixItems?: JsonSchema[];
+  contains?: JsonSchema;
+  minContains?: number;
+  maxContains?: number;
+  unevaluatedItems?: JsonSchema;
+  properties?: Record<string, JsonSchemaProperty>;
+  patternProperties?: Record<string, JsonSchema>;
+  propertyNames?: JsonSchema;
+  required?: string[];
+  additionalProperties?: JsonSchema;
+  unevaluatedProperties?: JsonSchema;
+  dependencies?: Record<string, JsonSchema | string[]>;
+  dependentRequired?: Record<string, string[]>;
+  dependentSchemas?: Record<string, JsonSchema>;
+  anyOf?: JsonSchema[];
+  oneOf?: JsonSchema[];
+  allOf?: JsonSchema[];
+  not?: JsonSchema;
+  if?: JsonSchema;
+  then?: JsonSchema;
+  else?: JsonSchema;
   minLength?: number;
   maxLength?: number;
   pattern?: string;
@@ -41,15 +68,17 @@ export interface JsonSchemaProperty {
   maximum?: number;
   exclusiveMinimum?: number;
   exclusiveMaximum?: number;
+  multipleOf?: number;
   minItems?: number;
   maxItems?: number;
+  uniqueItems?: boolean;
+  minProperties?: number;
+  maxProperties?: number;
 }
 
-export interface InputSchema {
+export interface InputSchema extends JsonSchemaProperty {
   type: "object";
   properties: Record<string, JsonSchemaProperty>;
-  required?: string[];
-  additionalProperties?: boolean | JsonSchemaProperty;
 }
 
 // ─── Capability Contract ──────────────────────────────────────────────────
@@ -125,7 +154,7 @@ export interface ToolDefinition<
   inputSchema: InputSchema;
 
   /** The function that runs when the tool is called */
-  handler: (params: TParams) => Promise<ToolResult<TResult>>;
+  handler: (params: TParams, context?: ToolExecutionContext) => Promise<ToolResult<TResult>>;
 
   /** Optional tags for grouping/filtering (e.g. "productivity", "education") */
   tags?: string[];
@@ -138,6 +167,20 @@ export interface ToolDefinition<
 
   /** Optional execution semantics for consequential or delegated work. */
   contract?: CapabilityContract;
+  /** Discovery hints only; these do not confer authority. */
+  annotations?: {
+    title?: string;
+    readOnlyHint?: boolean;
+    destructiveHint?: boolean;
+    idempotentHint?: boolean;
+    openWorldHint?: boolean;
+  };
+  outputSchema?: InputSchema;
+  /** A trusted classifier; absent, invalid, or throwing means exclusive. */
+  executionMode?: ExecutionMode | ((params: Readonly<Record<string, unknown>>) => ExecutionMode);
+  replayPolicy?: ReplayPolicy;
+  /** Provider discovery metadata. Never a grant or replay guarantee. */
+  _meta?: Record<string, unknown>;
 }
 
 // ─── Tool Test ─────────────────────────────────────────────────────────────
@@ -172,6 +215,9 @@ export interface ToolResult<T = unknown> {
   executionOutcome?: "succeeded" | "failed" | "unknown";
   /** Optional human-friendly message (shown to the user by the AI) */
   message?: string;
+  content?: CallToolResult["content"];
+  structuredContent?: Record<string, unknown>;
+  _meta?: Record<string, unknown>;
 }
 
 // ─── Tool Example ───────────────────────────────────────────────────────────

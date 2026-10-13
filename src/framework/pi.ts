@@ -8,10 +8,13 @@
 
 import type { ToolRegistry } from "./registry.js";
 import type { ToolDefinition, ToolResult } from "./types.js";
+import type { ToolExecutionReceipt } from "./execution-types.js";
 import {
-  executeRuntimeTool,
-  formatRuntimeToolResult,
+  executeRuntimeToolDetailed,
+  runtimeToolContent,
+  runtimeToolFailureMessage,
   selectRuntimeTools,
+  type NativeToolContent,
   type RuntimeToolSelectionOptions,
 } from "./runtime-tool-bridge.js";
 
@@ -20,14 +23,12 @@ export interface PiTextContent {
   text: string;
 }
 
-export interface PiToolResult<TDetails = ToolResult> {
-  content: PiTextContent[];
+export interface PiToolResult<TDetails = ToolResult & { executionReceipt?: ToolExecutionReceipt }> {
+  content: NativeToolContent[];
   details: TDetails;
 }
 
-export interface PiExtensionContextLike {
-  [key: string]: unknown;
-}
+export type PiExtensionContextLike = object;
 
 export interface PiToolShape {
   name: string;
@@ -87,18 +88,22 @@ export function toolToPi(
     parameters: tool.inputSchema,
     ...(promptSnippet === undefined ? {} : { promptSnippet }),
     ...(promptGuidelines === undefined ? {} : { promptGuidelines }),
-    async execute(_toolCallId, params, signal, _onUpdate, _context) {
-      const result = await executeRuntimeTool(registry, tool, params, signal);
+    async execute(toolCallId, params, signal, _onUpdate, hostContext) {
+      const context = await options.resolveExecutionContext?.({ tool, toolCallId, signal, hostContext });
+      const execution = await executeRuntimeToolDetailed(registry, tool, params, signal, { callId: toolCallId, ...context });
+      const { result, receipt } = execution;
       // Pi marks tool failures only when execute throws. Returning an `isError`
       // field is ignored by the current runtime.
       if (!result.success) {
-        throw new Error(result.error ?? "unknown error");
+        const error = new Error(runtimeToolFailureMessage(result));
+        Object.assign(error, { executionReceipt: receipt, result });
+        throw error;
       }
       return options.formatResult
         ? options.formatResult(result, tool)
         : {
-            content: [{ type: "text", text: formatRuntimeToolResult(result) }],
-            details: result,
+            content: runtimeToolContent(result),
+            details: { ...result, executionReceipt: receipt },
           };
     },
   };

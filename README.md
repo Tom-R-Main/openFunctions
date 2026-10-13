@@ -26,7 +26,7 @@
 
 openFunctions is an MIT-licensed TypeScript framework for building AI-callable tools and exposing them through [MCP](https://modelcontextprotocol.io), chat adapters, workflows, and agents. Its core runtime is simple:
 
-`ToolDefinition -> ToolRegistry -> AIAdapter`
+`ToolDefinition -> ToolRegistry -> ToolExecutor -> adapter or host`
 
 Everything else composes on top of that:
 
@@ -55,6 +55,66 @@ npm run test-tools
 ```
 
 The first thing to build is a tool, not an agent.
+
+### Use the compiled library
+
+The package root is a library. Importing it does not load `.env`, register
+workshop tools, create stores, or start a server. Build and pack this checkout
+to try the revised package before publication:
+
+```sh
+npm run build
+npm pack
+# In a separate consumer:
+npm install /absolute/path/to/openfunction-1.0.0.tgz
+```
+
+```ts
+import { defineTool, ToolRegistry, ok } from "openfunction/framework/core";
+
+const registry = new ToolRegistry();
+registry.register(defineTool({
+  name: "hello_world",
+  description: "Return a greeting for the supplied name",
+  inputSchema: { type: "object", properties: { name: { type: "string" } }, required: ["name"] },
+  handler: async ({ name }) => ok({ greeting: `Hello ${name}` }),
+}));
+export { registry };
+```
+
+Serve an exported registry with `openfunction serve --module
+/absolute/path/to/tools.js`. The existing `npm start`, `npm run dev`, and
+workshop commands still use the source workshop entry. Siftable and PostgreSQL
+are optional peers; root, core, and framework imports work without either.
+
+### Complete bounded work through Hermes
+
+The opt-in work profile selects a finite trusted step catalog, caller-owned
+state and grants, an explicit local work item, and exact verification bindings.
+The compiled CLI reviews and issues authority separately from Hermes's tool
+approval gate:
+
+```sh
+openfunction work prepare --config /absolute/profile.json --work-item job --out /absolute/preview.json
+openfunction work authorize --config /absolute/profile.json --preview /absolute/preview.json
+openfunction hermes-config --config /absolute/profile.json
+openfunction serve --profile work --config /absolute/profile.json
+```
+
+Authorization displays the bound scope and limits. Type `AUTHORIZE` to permit
+execution; automatic completion stays off unless you separately type
+`COMPLETE`. Changes to the configuration, contract, or plan invalidate the
+preview. Grant revocation takes effect at the next admission and completion.
+See [runtime integrations](docs/AGENT-RUNTIMES.md) for profile configuration,
+portable installation, and the verified host commands.
+
+The controller records effects and independent verification, renews a bounded
+lease during long steps, and refuses completion with stale proof or unknown
+effects. It covers actions performed through its executor. Native host actions
+remain outside that journal. Local grant files assume trusted same-user code;
+they provide no sandbox against a process that can modify their custody.
+Hosted Siftable calls use authenticated MCP, but its durable-work backend is
+disabled until the missing public recovery and parser contracts are available.
 
 ## The Mental Model
 
@@ -344,10 +404,11 @@ The provider projects its default tool set directly from the published
 [`@siftable/mcp-server`](https://www.npmjs.com/package/@siftable/mcp-server)
 SDK. That keeps tool names, schemas, feature gates, transport containment,
 work-item lifecycle rules, structured receipts, and execution behavior aligned
-with the installed Siftable MCP version. The current `1.2.27` package declares
-136 tools; 114 are callable with its default feature flags. Optional dataset
-and ontology tools appear automatically when their Siftable feature flags are
-enabled. Set `includeLegacyAliases: true` only when migrating callers that still
+with the installed Siftable MCP version. The development SDK is pinned to
+`1.5.1`; drift checks compare its actual enabled catalog and schemas. Hosted
+session tools require custody unavailable to this embedded provider and are
+excluded. Optional dataset and ontology tools follow their Siftable feature
+flags. Set `includeLegacyAliases: true` only when migrating callers that still
 invoke the old hand-written `exf_*` names.
 
 ```ts
@@ -399,10 +460,12 @@ adds an OpenClaw runtime dependency to the framework.
 
 Two reference plugins live in `plugins/`:
 
-- **`openclaw-execufunction/`** — Siftable for OpenClaw. It derives all
-  currently enabled tools from `@siftable/mcp-server`, delegates execution to
-  the SDK, and generates its static `contracts.tools` manifest from the same
-  source. Plugin id `execufunction` remains for config compatibility.
+- **`openclaw-execufunction/`** — Mixed Siftable and opt-in bounded-work plugin.
+  It projects the supported embedded SDK catalog through the shared executor,
+  resolves credentials only on invocation, and snapshots exact tool contracts.
+  Plugin id `execufunction` remains for config compatibility. Its legacy mixed
+  entry uses the SDK registration path; the static validator targets the
+  separate tool-only plugin below.
 - **`openclaw-openfunctions/`** — Current tool-only reference using
   `defineToolPlugin()`, compiled ESM, and generated manifest metadata. Marked
   `private:true`; it imports the colocated framework by relative path.
@@ -432,11 +495,15 @@ openFunctions/
 │   │   └── execufunction/      # Siftable context provider (wraps @siftable/mcp-server)
 │   ├── examples/               # Reference tool patterns
 │   ├── my-tools/               # Your tools
-│   └── index.ts                # MCP entrypoint
+│   ├── runtime/               # Trusted bounded-work profile loader
+│   ├── cli.ts                 # Compiled serve and grant commands
+│   ├── workshop.ts            # Source workshop MCP entrypoint
+│   └── index.ts               # Side-effect-free library entrypoint
 ├── plugins/
 │   ├── openclaw-execufunction/ # Siftable plugin for openclaw (publishable)
 │   ├── openclaw-openfunctions/ # Reference: current tool-plugin bridge (private)
-│   └── pi-openfunctions/       # Reference: native Pi extension bridge (private)
+│   ├── pi-openfunctions/       # Reference: native Pi extension bridge (private)
+│   └── hermes-openfunctions/   # Portable MCP plugin and bounded-work skill
 ├── docs/                       # Architecture docs
 ├── scripts/                    # chat, create-tool, docs
 ├── test-client/                # CLI tester + test runner

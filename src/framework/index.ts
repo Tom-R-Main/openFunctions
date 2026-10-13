@@ -30,17 +30,27 @@ export { defineTool, ok, err } from "./tool.js";
 
 // Persistent store
 export { createStore } from "./store.js";
-export type { Store, StoreMutation } from "./store.js";
+export type { Store, StoreMutation, StoreOptions } from "./store.js";
 
 // Postgres store (optional — requires DATABASE_URL)
 export { createPgStore, closePgPool } from "./pg-store.js";
+export type { PgStore, PgStoreOptions, PgStoreDatabase } from "./pg-store.js";
 
 // Tool registry
 export { ToolRegistry, registry } from "./registry.js";
+export { ToolExecutor, capabilityDigest } from "./executor.js";
+export type * from "./execution-types.js";
+export { ToolScheduler } from "./tool-scheduler.js";
+export type { BoundToolScheduler, ToolScheduleOptions, ToolSchedulingMode } from "./tool-scheduler.js";
+export { ExecutionJournal } from "./execution-journal.js";
+export type { ExecutionJournalOptions, RecoveredExecution, StoredExecutionEvent } from "./execution-journal.js";
+export { FileArtifactStore, ArtifactQuotaError, createArtifactReadTool, DEFAULT_ARTIFACT_QUOTA_BYTES, DEFAULT_MODEL_OUTPUT_BYTES } from "./artifacts.js";
+export type { ArtifactReference, FileArtifactStoreOptions, ArtifactReadOptions } from "./artifacts.js";
+export * from "./work/index.js";
 
 // MCP server
-export { startServer } from "./server.js";
-export type { ServerOptions } from "./server.js";
+export { startServer, createMcpServer } from "./server.js";
+export type { ServerOptions, McpServerHandle, McpRequestContext } from "./server.js";
 
 // System prompts
 export { composePrompt, autoToolGuide, loadPromptPreset, resolvePrompt, listPresets } from "./prompts.js";
@@ -142,12 +152,21 @@ export type {
 } from "./runs.js";
 
 // Context Providers
-export { connectProvider, contextPrompt, checkProviderHealth } from "./context.js";
+export { connectProvider, contextPrompt, checkProviderHealth, collectContextSnapshots, invalidateContext, contextSnapshotReferences, formatContextSnapshots } from "./context.js";
 export type {
   ContextProvider,
   ConnectedProvider,
   ContextProviderMetadata,
   ContextCapability,
+  ContextFreshnessPolicy,
+  ContextFreshness,
+  ContextScopeIdentity,
+  ContextSourceReference,
+  ContextSnapshotItem,
+  ContextSnapshotInput,
+  ContextSnapshot,
+  ContextSnapshotReference,
+  ContextSnapshotOptions,
 } from "./context.js";
 
 // Chat Agent
@@ -164,6 +183,7 @@ export type {
   ServeOptions,
   MemoryConfig,
   PeerConfig,
+  ModelHistoryBudget,
 } from "./chat-agent-types.js";
 export type {
   AdapterSessionState,
@@ -171,6 +191,8 @@ export type {
   ContentPart,
   TextContentPart,
   ImageContentPart,
+  AdapterUsage,
+  AdapterRequestLimits,
 } from "./adapters/types.js";
 
 // Event-sourced session kernel
@@ -200,6 +222,7 @@ export type {
   SessionEventOf,
   SessionEventStore,
   SessionEventType,
+  SessionEventSchemaVersion,
   StepOutcome,
   ToolResultOutcome,
 } from "./session.js";
@@ -237,6 +260,7 @@ export type {
   HermesMcpStdioServerConfig,
   HermesMcpConfig,
   CreateHermesMcpConfigOptions,
+  HermesMcpLifecycle,
 } from "./hermes.js";
 
 // Types (for students who want TypeScript help)
@@ -247,6 +271,7 @@ export type {
   ToolTest,
   InputSchema,
   JsonSchemaProperty,
+  JsonSchema,
   GeminiFunctionDeclaration,
   AnthropicTool,
   OpenAIFunction,

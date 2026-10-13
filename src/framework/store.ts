@@ -11,7 +11,8 @@
  *   tasks.getAll();    // → [{ title: "Read chapter 5", ... }]
  *   tasks.delete("1");
  *
- * Data is saved to .data/<name>.json in the project root.
+ * Data is saved to .data/<name>.json under the caller working directory.
+ * Pass { dataDir } to reopen an existing directory explicitly.
  * You can open these files to see exactly what's stored.
  */
 
@@ -32,13 +33,15 @@ import {
   unlinkSync,
   writeSync,
 } from "node:fs";
-import { basename, join, dirname } from "node:path";
-import { fileURLToPath } from "node:url";
+import { basename, join, dirname, resolve } from "node:path";
 
-// Resolve project root (two levels up from src/framework/)
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = dirname(__filename);
-const DATA_DIR = join(__dirname, "..", "..", ".data");
+export interface StoreOptions {
+  /** Directory owned by the caller. Defaults to process.cwd()/.data.
+   * Pass the previous repository .data path explicitly when reopening old state.
+   * Existing stores are never copied or merged automatically.
+   */
+  dataDir?: string;
+}
 const LOCK_WAIT_TIMEOUT_MS = 30_000;
 const LOCK_POLL_INTERVAL_MS = 10;
 const LOCK_SLEEP = new Int32Array(new SharedArrayBuffer(Int32Array.BYTES_PER_ELEMENT));
@@ -112,9 +115,10 @@ class StorePersistenceError extends Error {
  *
  * @param name - Store name (used as the filename, e.g. "tasks" → .data/tasks.json)
  */
-export function createStore<T>(name: string): Store<T> {
+export function createStore<T>(name: string, options: StoreOptions = {}): Store<T> {
   validateStoreName(name);
-  ensurePrivateDataDirectory();
+  const DATA_DIR = resolve(options.dataDir ?? join(process.cwd(), ".data"));
+  ensurePrivateDataDirectory(DATA_DIR);
 
   const filePath = join(DATA_DIR, `${name}.json`);
   const lockPath = `${filePath}.lock`;
@@ -320,7 +324,7 @@ function validateStoreName(name: string): void {
   }
 }
 
-function ensurePrivateDataDirectory(): void {
+function ensurePrivateDataDirectory(DATA_DIR: string): void {
   let created = false;
 
   try {
@@ -420,6 +424,7 @@ function normalizeStoreFile(filePath: string): void {
 }
 
 function persistData<T>(filePath: string, data: Map<string, T>): void {
+  const DATA_DIR = dirname(filePath);
   const serialized = serializeData(data, filePath);
   const tempPath = `${filePath}.${process.pid}.${randomUUID()}.tmp`;
   let fd: number | undefined;
@@ -456,6 +461,7 @@ function persistData<T>(filePath: string, data: Map<string, T>): void {
  * liveness check still proves the owner dead immediately before unlinking.
  */
 function reclaimStaleTempFiles(filePath: string): void {
+  const DATA_DIR = dirname(filePath);
   const fileName = basename(filePath);
   const pattern = new RegExp(
     `^${escapeRegExp(fileName)}\\.([1-9][0-9]*)\\.([0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12})\\.tmp$`,
@@ -562,6 +568,7 @@ function serializeData<T>(data: Map<string, T>, filePath: string): string {
  * waited out; claims owned by dead processes are reclaimed.
  */
 function acquireExclusiveLock(lockPath: string, storeName: string): StoreLock {
+  const DATA_DIR = dirname(lockPath);
   const token = randomUUID();
   const claimPath = `${lockPath}.${process.pid}.${token}.claim`;
   const owner: StoreLockOwner = { pid: process.pid, token };
@@ -676,6 +683,7 @@ function tryAcquireReclaimGate(
   claimPath: string,
   storeName: string,
 ): StoreLock | undefined {
+  const DATA_DIR = dirname(lockPath);
   // Recovery gates form an append-only generation chain. A crashed gate owner
   // is never unlinked or replaced: contenders advance to a child generation
   // keyed by that owner's unique token. This avoids recreating the same ABA

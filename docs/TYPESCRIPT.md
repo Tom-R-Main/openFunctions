@@ -49,8 +49,28 @@ isolated temporary directories, and verifies:
 - byte-identical runtime JavaScript; and
 - semantically equivalent declarations after normalizing union-member order.
 
-The verified tree currently produces 106 artifacts with byte-identical runtime
-JavaScript. Four declarations differed only in union-member ordering.
+The gate reports artifact counts for the actual tree. Do not reuse a historical
+count as evidence for a changed build.
+
+## Compiled package boundaries
+
+`tsconfig.build.json` emits distributable source under `dist/src`, excluding
+test-client and development bridges. The preparation script copies prompt
+presets to `dist/system-prompts` and marks `dist/src/cli.js` executable.
+`package.json` advertises explicit JavaScript/declaration subpaths; undocumented
+internal paths are not public exports.
+
+The package root re-exports the side-effect-free framework. Source workshop
+startup moved to `src/workshop.ts`; `npm start`, `dev`, and inspector scripts
+retain that beginner workflow. The compiled CLI separately supports exported
+MCP registries and opt-in work profiles.
+
+`npm run test:package` builds/packs and installs a fresh consumer, resolves all
+exports and declarations, exercises presets/CLI/read-only installation, and
+checks that root/core/framework imports need no Siftable or pg peer, load no
+`.env`, register no tools, and create no data files. Host SDKs stay in plugin
+dependencies. This test proves an installed package boundary, beyond a linked
+source import.
 
 This is a compiler feedback and tooling-compatibility improvement. TypeScript
 types are erased, so it is not a runtime performance optimization.

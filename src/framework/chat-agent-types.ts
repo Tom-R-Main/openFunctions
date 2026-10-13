@@ -6,9 +6,11 @@
  * into a single configurable, embeddable agent.
  */
 
+import type { ToolExecutionContext } from "./execution-types.js";
+import type { IncomingMessage } from "node:http";
 import type { ToolDefinition } from "./types.js";
 import type { ToolRegistry } from "./registry.js";
-import type { ContextProvider } from "./context.js";
+import type { ContextProvider, ContextFreshnessPolicy } from "./context.js";
 import type { PromptOptions } from "./prompts.js";
 import type { AIAdapter, ChatContent, ChatMessage, ReasoningEffort } from "./adapters/types.js";
 import type { Store } from "./store.js";
@@ -73,6 +75,12 @@ export interface ChatSessionConfig {
   recoverInterrupted?: boolean;
 }
 
+/** Explicit message/UTF-8 JSON budgets; no token-count approximation. */
+export interface ModelHistoryBudget {
+  maxMessages?: number;
+  maxBytes?: number;
+}
+
 // ─── Agent Config ──────────────────────────────────────────────────────────
 
 export interface ChatAgentConfig {
@@ -120,11 +128,20 @@ export interface ChatAgentConfig {
   /** Memory config. Default: ON (conversation + facts). Set false to disable. */
   memory?: boolean | MemoryConfig;
 
+  /** Source context refresh policy. Default preserves session behavior. */
+  contextFreshness?: ContextFreshnessPolicy;
+
   /** Context providers: string names (e.g., "execufunction") or ContextProvider instances */
   providers?: (string | ContextProvider)[];
 
+  /** Optional deterministic model history projection. Default: unbounded. */
+  historyBudget?: ModelHistoryBudget;
+
   /** Max tool-calling rounds per turn (default: 10) */
   maxToolRounds?: number;
+
+  /** Trusted application context for framework-mediated tool admission. */
+  executionContext?: ToolExecutionContext;
 
   /** Event-sourced session journal configuration. */
   session?: ChatSessionConfig;
@@ -212,6 +229,9 @@ export interface ChatAgentChatOptions {
   /** Override thread ID for this turn */
   threadId?: string;
 
+  /** Trusted direct-API context; HTTP callers receive context only via the host resolver. */
+  executionContext?: ToolExecutionContext;
+
   /** Optional IDs and grants that bind this turn to a larger task graph. */
   run?: RunContext;
 }
@@ -240,6 +260,9 @@ export interface ServeOptions {
 
   /** Host to bind to (default: "localhost") */
   host?: string;
+
+  /** Resolve identity/authority from trusted host authentication, never body fields. */
+  resolveExecutionContext?: (request: IncomingMessage) => ToolExecutionContext | Promise<ToolExecutionContext>;
 
   /** Enable CORS headers (default: false) */
   cors?: boolean;

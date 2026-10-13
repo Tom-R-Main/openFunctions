@@ -25,6 +25,19 @@ property contains the failed record. A manifest captures:
 
 Raw prompts, API keys, and environment secrets are not stored in a manifest.
 
+Runs also retain `executionReceiptRefs` and optional `contextSnapshotRefs`.
+Successful executions have receipt references without being mislabeled as
+partial effects. Execution receipts bind tool/input/result digests, admission,
+actor/scope references, policy, times, and verification state. They contain no
+raw grant or lease custody and do not recursively embed the result.
+
+`executeDetailed()` owns the canonical result and exact model serialization.
+Host text, chat history, run evidence, and standalone journals consume that
+same result; output hooks run once. Known success, known failure, and unknown
+effect certainty are distinct from verification. Late cancellation preserves a
+valid returned result. Failed result persistence requires reconciliation even
+when useful handler output is retained.
+
 ```typescript
 const result = await agent.run(task, adapter, registry, context, {
   taskId: "task-42",
@@ -87,6 +100,42 @@ const fulfillment = decideFulfillment({
 
 Structured output proves that an answer has a requested shape. It does not, by
 itself, prove that an external effect occurred or that a task is fulfilled.
+
+The work controller uses a stricter completion gate than the general run
+helpers. Its current plan coverage must match locally collected evidence,
+including outcome, plan/specification/environment, attempt, input fingerprint,
+mutation epoch, and saved artifact digest. Later writes invalidate that proof.
+Automatic completion needs a separate current grant and independent readback;
+human-only or unsupported criteria route to review. Unknown operations cannot
+complete until independently reconciled.
+
+Each claim, renewal, step, verification run, evidence submission, and terminal
+transition has its own durable identity. Recovery replays a known canonical
+result without another effect. A durable verification result can be submitted
+without rerunning the command. An uncertain backend operation can retry only
+within a verified backend key/payload guarantee; absent lookup does not prove
+non-execution. Hosted Siftable recovery is currently disabled where those
+contracts remain unproven.
+
+## Context and history
+
+Providers may implement `buildSnapshot()` alongside legacy `buildContext()`.
+Snapshots distinguish observations, claims, inferences, and policy references;
+they carry source/scope, observation time when known, digest, expiry, omissions,
+and freshness. Legacy text has unknown upstream freshness. Failed retrieval is
+stale or unavailable, rather than evidence that no work exists. Caches separate
+provider/principal/workspace/project identities.
+
+Sessions capture the snapshots used by model requests and runs. Refreshes append
+attributed context without rewriting prior evidence or stable system prompts.
+Provider text cannot grant execution authority. Actual adapter-provided usage
+and request limits are recorded; byte counts do not estimate tokens or cost.
+
+`historyBudget` optionally bounds messages and bytes. Projection retains whole
+turns/tool exchanges and clears incompatible continuation state atomically.
+An active turn exceeding the configured budget fails explicitly rather than
+splitting a provider exchange or inventing a summary. Full journal evidence
+remains available; the compatibility default is unbounded.
 
 ## Capability contracts
 

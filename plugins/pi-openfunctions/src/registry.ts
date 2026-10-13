@@ -1,5 +1,5 @@
-import { ToolRegistry } from "../../../src/framework/registry.js";
-import { defineTool, err, ok } from "../../../src/framework/tool.js";
+import { ToolRegistry } from "openfunction/framework/registry";
+import { defineTool, err, ok } from "openfunction/framework/tool";
 
 export function buildSampleRegistry(): ToolRegistry {
   const registry = new ToolRegistry();

@@ -6,6 +6,7 @@
  * agent filtering.
  */
 
+import { generateIdempotencyKey } from "@siftable/mcp-server/exfClient";
 import type { ToolDefinition } from "../../framework/types.js";
 import { defineTool, ok, err } from "../../framework/tool.js";
 import type { ExfClient } from "./client.js";
@@ -398,47 +399,9 @@ export function createPeopleTools(client: ExfClient): ToolDefinition<any, any>[]
 
 // ─── Codebase ───────────────────────────────────────────────────────────────
 
-export function createCodebaseTools(client: ExfClient): ToolDefinition<any, any>[] {
-  return [
-    defineTool<{ query: string; repositoryId?: string }>({
-      name: "exf_codebase_search",
-      description:
-        "Semantic search across indexed codebases in Siftable. " +
-        "Finds relevant code snippets, files, and functions by meaning.",
-      inputSchema: {
-        type: "object",
-        properties: {
-          query: { type: "string", description: "Search query (natural language)" },
-          repositoryId: { type: "string", description: "Limit to a specific repository" },
-        },
-        required: ["query"],
-      },
-      tags: ["codebase"],
-      handler: async ({ query, repositoryId }) => {
-        const data = await client.searchCode(query, repositoryId);
-        return ok(data, `Found ${data.results.length} result(s)`);
-      },
-    }),
-
-    defineTool<{ repositoryId: string; area: string }>({
-      name: "exf_code_who_knows",
-      description:
-        "Find who has expertise in a specific code area, based on commit history and ownership.",
-      inputSchema: {
-        type: "object",
-        properties: {
-          repositoryId: { type: "string", description: "Repository ID" },
-          area: { type: "string", description: "Code area or topic, e.g. 'auth middleware'" },
-        },
-        required: ["repositoryId", "area"],
-      },
-      tags: ["codebase"],
-      handler: async ({ repositoryId, area }) => {
-        const data = await client.codeWhoKnows(repositoryId, area);
-        return ok(data);
-      },
-    }),
-  ];
+/** Retained factory name; retired remote source capabilities are not advertised. */
+export function createCodebaseTools(_client: ExfClient): ToolDefinition<any, any>[] {
+  return [];
 }
 
 // ─── Work Items ─────────────────────────────────────────────────────────────
@@ -531,6 +494,7 @@ export function createWorkItemTools(client: ExfClient): ToolDefinition<any, any>
       claimOwner: string;
       workItemId?: string;
       leaseSeconds?: number;
+      idempotencyKey?: string;
     }>({
       name: "exf_work_item_claim",
       description:
@@ -549,22 +513,24 @@ export function createWorkItemTools(client: ExfClient): ToolDefinition<any, any>
           },
           workItemId: { type: "string", description: "Optional specific work-item UUID" },
           leaseSeconds: { type: "integer", description: "Claim lease duration in seconds" },
+          idempotencyKey: { type: "string", description: "Stable key for an exact retry; omitted keys are fresh per invocation" },
         },
         required: ["claimOwner"],
       },
       tags: ["work_items"],
-      handler: async ({ alias, claimOwner, workItemId, leaseSeconds }) => {
+      handler: async ({ alias, claimOwner, workItemId, leaseSeconds, idempotencyKey }, context) => {
         const input = {
           claimOwner,
           ...(alias ? { assignedAlias: alias } : {}),
           ...(workItemId ? { workItemId } : {}),
           ...(leaseSeconds ? { leaseSeconds } : {}),
         };
-        const res = await sift.claimWorkItem(input);
+        const key = idempotencyKey ?? context?.idempotencyKey ?? generateIdempotencyKey("openfunction-legacy-claim");
+        const res = await sift.claimWorkItem(input, key);
         if (res.error || !res.data) {
-          return err(`claimWorkItem failed (${res.statusCode}): ${res.error}`);
+          return { ...err(`claimWorkItem failed (${res.statusCode}): ${res.error}`), executionOutcome: "unknown" };
         }
-        return ok(res.data, `Claimed work item for ${alias ?? claimOwner}`);
+        return { ...ok(res.data, `Claimed work item for ${alias ?? claimOwner}`), _meta: { "siftable/idempotency": { key, ...res.idempotency } } };
       },
     }),
 
@@ -652,7 +618,7 @@ export function createWorkItemTools(client: ExfClient): ToolDefinition<any, any>
         }
         const res = await sift.transitionWorkItem(workItemId, action, input);
         if (res.error || !res.data) {
-          return err(`transitionWorkItem failed (${res.statusCode}): ${res.error}`);
+          return { ...err(`transitionWorkItem failed (${res.statusCode}): ${res.error}`), executionOutcome: "unknown" };
         }
         return ok(redactWorkItemTokens(res.data), `Work item transitioned: ${action}`);
       },
@@ -726,6 +692,7 @@ export function createVaultTools(client: ExfClient): ToolDefinition<any, any>[] 
       tags?: string[];
       category?: string;
       url?: string;
+      idempotencyKey?: string;
     }>({
       name: "exf_vault_create",
       description:
@@ -746,16 +713,19 @@ export function createVaultTools(client: ExfClient): ToolDefinition<any, any>[] 
           tags: { type: "array", items: { type: "string" }, description: "Tags" },
           category: { type: "string", description: "Category for grouping" },
           url: { type: "string", description: "Associated URL" },
+          idempotencyKey: { type: "string", description: "Stable key for an exact retry; omitted keys are fresh per invocation" },
         },
         required: ["name", "payload"],
       },
       tags: ["vault"],
-      handler: async (params) => {
-        const res = await sift.createVaultEntry(params);
+      handler: async (params, context) => {
+        const { idempotencyKey, ...payload } = params;
+        const key = idempotencyKey ?? context?.idempotencyKey ?? generateIdempotencyKey("openfunction-legacy-vault");
+        const res = await sift.createVaultEntry(payload, key);
         if (res.error || !res.data) {
-          return err(`createVaultEntry failed (${res.statusCode}): ${res.error}`);
+          return { ...err(`createVaultEntry failed (${res.statusCode}): ${res.error}`), executionOutcome: "unknown" };
         }
-        return ok(res.data, `Created vault entry: ${params.name}`);
+        return { ...ok(res.data, `Created vault entry: ${params.name}`), _meta: { "siftable/idempotency": { key, ...res.idempotency } } };
       },
     }),
   ];
@@ -874,6 +844,7 @@ export function createCodeMemoryTools(client: ExfClient): ToolDefinition<any, an
       category: string;
       filePath?: string;
       repositoryId?: string;
+      idempotencyKey?: string;
     }>({
       name: "exf_code_memory_store",
       description:
@@ -888,16 +859,19 @@ export function createCodeMemoryTools(client: ExfClient): ToolDefinition<any, an
           category: { type: "string", description: "Category, e.g. 'invariant', 'gotcha', 'design-decision'" },
           filePath: { type: "string", description: "Path the fact relates to (optional)" },
           repositoryId: { type: "string", description: "Repository scope (optional)" },
+          idempotencyKey: { type: "string", description: "Stable key for an exact retry; omitted keys are fresh per invocation" },
         },
         required: ["fact", "category"],
       },
       tags: ["code_memory"],
-      handler: async (params) => {
-        const res = await sift.storeCodeMemory(params);
+      handler: async (params, context) => {
+        const { idempotencyKey, ...payload } = params;
+        const key = idempotencyKey ?? context?.idempotencyKey ?? generateIdempotencyKey("openfunction-legacy-memory");
+        const res = await sift.storeCodeMemory(payload, key);
         if (res.error || !res.data) {
-          return err(`storeCodeMemory failed (${res.statusCode}): ${res.error}`);
+          return { ...err(`storeCodeMemory failed (${res.statusCode}): ${res.error}`), executionOutcome: "unknown" };
         }
-        return ok(res.data, "Code memory stored");
+        return { ...ok(res.data, "Code memory stored"), _meta: { "siftable/idempotency": { key, ...res.idempotency } } };
       },
     }),
 
@@ -954,7 +928,7 @@ export function createCodeMemoryTools(client: ExfClient): ToolDefinition<any, an
       handler: async ({ memoryId }) => {
         const res = await sift.deleteCodeMemory(memoryId);
         if (res.error || !res.data) {
-          return err(`deleteCodeMemory failed (${res.statusCode}): ${res.error}`);
+          return { ...err(`deleteCodeMemory failed (${res.statusCode}): ${res.error}`), executionOutcome: "unknown" };
         }
         return ok(res.data, "Code memory deleted");
       },

@@ -35,3 +35,70 @@ jobs:
 
       - name: Test
         run: npm test
+
+      - name: Execution and recovery regressions
+        run: npm run test:focused
+
+      - name: Compiler parity
+        run: npm run verify:typescript
+
+      - name: Packed consumer and compiled grant CLI
+        run: npm run test:package && npm run test:work-cli
+
+  native-hosts:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        node: [22, 24]
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: ${{ matrix.node }}
+          cache: npm
+      - run: npm ci
+      - run: npm run build
+      - name: Install pinned native plugin SDKs
+        run: |
+          npm ci --ignore-scripts --prefix plugins/openclaw-execufunction
+          npm ci --ignore-scripts --prefix plugins/openclaw-openfunctions
+          npm ci --ignore-scripts --prefix plugins/pi-openfunctions
+      - name: Real SDK types manifests loaders and bounded work
+        run: npm run test:hosts
+
+  hermes:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        node: [22, 24]
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/checkout@v7
+        with:
+          repository: NousResearch/hermes-agent
+          ref: 7cc3fb8cb55898747dd1dfa56fda3e16ebba028e
+          path: .host-fixtures/hermes-agent
+      - uses: actions/setup-node@v7
+        with:
+          node-version: ${{ matrix.node }}
+          cache: npm
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+      - run: npm ci
+      - name: Provision the official managed Hermes interpreter
+        run: |
+          node test-client/provision-hermes-runtime.mjs --hermes-root "$GITHUB_WORKSPACE/.host-fixtures/hermes-agent" --runtime-dir "$RUNNER_TEMP/hermes-runtime" --data-dir "$RUNNER_TEMP/hermes-provision-home" --out "$RUNNER_TEMP/hermes-runtime.json"
+      - name: Real portable host grants execution and crash recovery
+        run: |
+          HERMES_TEST_PYTHON=$(node -e 'process.stdout.write(JSON.parse(require("fs").readFileSync(process.argv[1],"utf8")).python)' "$RUNNER_TEMP/hermes-runtime.json")
+          npm run test:hermes -- --hermes-root "$GITHUB_WORKSPACE/.host-fixtures/hermes-agent" --python "$HERMES_TEST_PYTHON" --runtime-dir "$RUNNER_TEMP/hermes-runtime" --mode work --install-mode online --out "$RUNNER_TEMP/hermes-evidence"
+      - name: Retain host evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: hermes-node-${{ matrix.node }}
+          path: |
+            ${{ runner.temp }}/hermes-runtime.json
+            ${{ runner.temp }}/hermes-evidence
+          if-no-files-found: warn
