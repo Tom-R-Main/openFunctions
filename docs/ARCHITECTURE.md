@@ -115,6 +115,24 @@ executes catalog-bound steps, and records actual command/readback evidence.
 Lease renewal has a private execution lane that progresses during a long step;
 terminal transitions and renewals remain serialized with each other.
 
+The controller's internal modules separate the checks from their ordered effects:
+
+| Module | Responsibility |
+| --- | --- |
+| `controller.ts` | Owns attempt state, admission/lifecycle locks, persistence, timers, and dispatch. |
+| `authority.ts` | Resolves grants and checks current contract, catalog, path, lease, and receipt bindings. |
+| `attempt-verification.ts` | Selects trusted verification bindings, collects evidence, and validates completion proof. |
+| `attempt-recovery.ts` | Recovers saved calls and backend operations, performs independent readback, and restores lifecycle under the controller's locks. |
+| `attempt-state.ts` | Defines the existing persisted attempt shape and internal effect signatures. |
+
+Recovery first accounts saved outputs, then recovers oracle, step, and verification
+calls. It records recovered outputs before reconciling backend operations, resolves
+unknown effects through independent readback, and finally restores lifecycle.
+The recovery runtime exposes the controller effects explicitly; it does not own
+locks or a second copy of state. Completion proof checking returns a synchronous
+subject fence that the controller runs immediately before terminal dispatch,
+after the final awaited authority checks.
+
 Verification binds the active plan, environment, source input manifest,
 fingerprints before/after execution, and mutation epoch. Relevant writes
 invalidate proof. Completion rechecks current subject and authoritative coverage
